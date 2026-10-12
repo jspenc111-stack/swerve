@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Swerve app icon: an arrow swerving between cubes (original artwork) -->
+  <rect width="512" height="512" rx="96" fill="#141a2a"/>
+  <rect y="236" width="512" height="276" fill="#f1f1ec"/>
+  <rect y="190" width="512" height="46" fill="#bcd8ee"/>
+  <rect y="96" width="512" height="94" fill="#86b6dd" opacity="0.55"/>
+  <!-- far cubes -->
+  <g>
+    <rect x="96" y="214" width="34" height="30" fill="#8d939b"/>
+    <polygon points="96,214 130,214 136,208 102,208" fill="#b9bec4"/>
+    <rect x="354" y="210" width="40" height="36" fill="#8d939b"/>
+    <polygon points="354,210 394,210 386,203 348,203" fill="#b9bec4"/>
+  </g>
+  <!-- near cubes -->
+  <g>
+    <rect x="52" y="262" width="96" height="88" fill="#7a49b4"/>
+    <polygon points="52,262 148,262 168,244 74,244" fill="#a27fd0"/>
+    <polygon points="148,262 168,244 168,330 148,350" fill="#5a3290"/>
+    <rect x="352" y="258" width="104" height="96" fill="#ea6457"/>
+    <polygon points="352,258 456,258 436,238 334,238" fill="#f39184"/>
+    <polygon points="352,258 334,238 334,334 352,354" fill="#b8473c"/>
+  </g>
+  <!-- ship shadow and arrow -->
+  <ellipse cx="262" cy="436" rx="78" ry="16" fill="#000" opacity="0.18"/>
+  <g transform="rotate(-12 256 380)">
+    <polygon points="256,300 336,430 256,398 176,430" fill="#d9483b"/>
+    <polygon points="256,300 256,398 176,430" fill="#ff6b5c"/>
+  </g>
+</svg>

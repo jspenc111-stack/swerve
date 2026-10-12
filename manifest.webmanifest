@@ -1,0 +1,14 @@
+{
+  "name": "Swerve",
+  "short_name": "Swerve",
+  "description": "Steer an arrow across an endless field and swerve around cubes.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#141a2a",
+  "theme_color": "#141a2a",
+  "icons": [
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
