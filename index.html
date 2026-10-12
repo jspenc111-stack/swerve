@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#141a2a">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="referrer" content="no-referrer">
+  <title>Swerve</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./js/main.js"></script>
+</head>
+<body>
+  <canvas id="game" aria-label="Game field"></canvas>
+
+  <!-- Playing: score, level name, pause button -->
+  <div id="hud" class="hud hidden">
+    <div class="hud-score">
+      <div id="hud-score">0</div>
+      <div id="hud-level" class="hud-level"></div>
+    </div>
+    <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
+  </div>
+
+  <div id="banner" class="banner" aria-live="polite"></div>
+
+  <!-- Start screen -->
+  <section id="screen-start" class="screen">
+    <div class="panel">
+      <h1 class="title">Swerve</h1>
+      <p class="best">Best: <span id="start-best">0</span></p>
+      <button id="btn-play" class="big-btn">Play</button>
+      <p class="howto" id="start-howto">Hold left or right side to steer.</p>
+      <button id="btn-settings" class="icon-btn settings-btn" aria-label="Settings">⚙︎</button>
+    </div>
+    <div class="version" id="version"></div>
+  </section>
+
+  <!-- Paused -->
+  <section id="screen-pause" class="screen hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button id="btn-resume" class="big-btn">Resume</button>
+      <button id="btn-restart" class="mid-btn">Restart</button>
+      <button id="btn-quit" class="mid-btn">Quit to menu</button>
+    </div>
+  </section>
+
+  <!-- Game over -->
+  <section id="screen-over" class="screen hidden">
+    <div class="panel">
+      <h2>Game over</h2>
+      <p id="over-newbest" class="newbest hidden">New best!</p>
+      <p class="final-score" id="over-score">0</p>
+      <p class="over-line" id="over-level"></p>
+      <p class="over-line">Best: <span id="over-best">0</span></p>
+      <button id="btn-again" class="big-btn">Play again</button>
+      <button id="btn-menu" class="mid-btn">Menu</button>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section id="screen-settings" class="screen hidden">
+    <div class="panel">
+      <h2>Settings</h2>
+      <p class="label">Controls</p>
+      <div class="choice" role="radiogroup" aria-label="Controls">
+        <button class="choice-btn" data-controls="sides" role="radio">Hold sides</button>
+        <button class="choice-btn" data-controls="tilt" role="radio">Tilt phone</button>
+        <button class="choice-btn" data-controls="drag" role="radio">Drag</button>
+      </div>
+      <button id="btn-sound" class="toggle-btn" role="switch">Sound: On</button>
+      <button id="btn-vibration" class="toggle-btn" role="switch">Vibration: On</button>
+      <button id="btn-reset" class="mid-btn danger">Reset best score</button>
+      <div id="reset-confirm" class="confirm hidden">
+        <p>Erase your best score?</p>
+        <button id="btn-reset-yes" class="mid-btn danger">Yes, reset</button>
+        <button id="btn-reset-no" class="mid-btn">Cancel</button>
+      </div>
+      <button id="btn-settings-done" class="big-btn">Done</button>
+    </div>
+  </section>
+
+  <!-- Hidden debug panel (open the page with ?debug=1) -->
+  <div id="debug" class="debug hidden"></div>
+</body>
+</html>

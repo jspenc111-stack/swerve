@@ -1,0 +1,9 @@
+{
+  "name": "swerve",
+  "private": true,
+  "type": "module",
+  "description": "A one-player arcade game. No dependencies; tests use Node's built-in runner.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
