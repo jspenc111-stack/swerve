@@ -19,7 +19,12 @@ export function createRenderer(canvas, config) {
     visible: [],
     paletteKey: '',
     shades: { front: [], top: [], side: [], edge: [] },
-    groundTop: '#000000',
+    gradKey: '',
+    skyGrad: null,
+    groundGrad: null,
+    shipKey: '',
+    shipDark: '#000000',
+    shipLight: '#ffffff',
   };
   resizeRenderer(r);
   return r;
@@ -37,6 +42,7 @@ export function resizeRenderer(r) {
   r.horizonY = r.h * cfg.horizonRatio;
   // Focal length from screen width, so the view is similar on any phone.
   r.f = Math.min(r.w, r.h * 0.75) * cfg.focalScale;
+  r.gradKey = '';
 }
 
 // Precompute cube face colors for each fog step (only when the palette changes).
@@ -54,7 +60,6 @@ function updateShades(r, p) {
     r.shades.side[i] = mixColor(side, p.skyHorizon, t);
     r.shades.edge[i] = mixColor(edge, p.skyHorizon, t);
   }
-  r.groundTop = mixColor(p.ground, p.skyHorizon, 0.55);
 }
 
 // view: { palette, bank (radians), roll (radians), shakeX, shakeY,
@@ -97,19 +102,24 @@ export function drawFrame(r, game, view) {
 
 function drawSkyAndGround(r, p) {
   const { ctx, w, h, horizonY } = r;
+  // Gradients are rebuilt only when the colors or screen size change.
+  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h;
+  if (key !== r.gradKey) {
+    r.gradKey = key;
+    r.skyGrad = ctx.createLinearGradient(0, horizonY - h * 0.6, 0, horizonY);
+    r.skyGrad.addColorStop(0, p.sky);
+    r.skyGrad.addColorStop(1, p.skyHorizon);
+    r.groundGrad = ctx.createLinearGradient(0, horizonY, 0, h);
+    r.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.55));
+    r.groundGrad.addColorStop(0.35, p.ground);
+    r.groundGrad.addColorStop(1, p.ground);
+  }
   // Oversized so the corners stay covered when the view is tilted.
   const left = -w;
   const width = w * 3;
-  const sky = ctx.createLinearGradient(0, horizonY - h * 0.6, 0, horizonY);
-  sky.addColorStop(0, p.sky);
-  sky.addColorStop(1, p.skyHorizon);
-  ctx.fillStyle = sky;
+  ctx.fillStyle = r.skyGrad;
   ctx.fillRect(left, horizonY - h * 2, width, h * 2 + 1);
-  const ground = ctx.createLinearGradient(0, horizonY, 0, h);
-  ground.addColorStop(0, r.groundTop);
-  ground.addColorStop(0.35, p.ground);
-  ground.addColorStop(1, p.ground);
-  ctx.fillStyle = ground;
+  ctx.fillStyle = r.groundGrad;
   ctx.fillRect(left, horizonY, width, h * 2);
 }
 
@@ -268,12 +278,17 @@ function drawShip(r, p, lean) {
   ctx.translate(pivotX, pivotY);
   ctx.rotate(lean);
   ctx.translate(-pivotX, -pivotY);
+  if (r.shipKey !== p.ship) {
+    r.shipKey = p.ship;
+    r.shipDark = mixColor(p.ship, '#000000', 0.18);
+    r.shipLight = mixColor(p.ship, '#ffffff', 0.12);
+  }
   // Right half (darker) then left half (lighter) for a folded look.
-  ctx.fillStyle = mixColor(p.ship, '#000000', 0.18);
+  ctx.fillStyle = r.shipDark;
   ctx.beginPath();
   ctx.moveTo(P[0].x, P[0].y); ctx.lineTo(P[1].x, P[1].y); ctx.lineTo(P[2].x, P[2].y);
   ctx.fill();
-  ctx.fillStyle = mixColor(p.ship, '#ffffff', 0.12);
+  ctx.fillStyle = r.shipLight;
   ctx.beginPath();
   ctx.moveTo(P[0].x, P[0].y); ctx.lineTo(P[2].x, P[2].y); ctx.lineTo(P[3].x, P[3].y);
   ctx.fill();

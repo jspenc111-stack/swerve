@@ -2,7 +2,7 @@
 // (Game rules live in game.js; drawing lives in render.js.)
 
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
-import { createGame, resetGame, stepGame } from './game.js';
+import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
 import { blendPalette, copyPalette, bannerText, hudLabel } from './levels.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
@@ -148,15 +148,16 @@ function hideBanner() {
 
 let lastScoreShown = -1;
 let lastLabel = '';
+let lastLevelShown = -1;
 function updateHud() {
   if (game.score !== lastScoreShown) {
     lastScoreShown = game.score;
     $('hud-score').textContent = game.score;
   }
-  const label = hudLabel(game.info);
-  if (label !== lastLabel) {
-    lastLabel = label;
-    $('hud-level').textContent = label;
+  if (game.levelIndex !== lastLevelShown || lastLabel === '') {
+    lastLevelShown = game.levelIndex;
+    lastLabel = hudLabel(game.info);
+    $('hud-level').textContent = lastLabel;
   }
 }
 
@@ -328,7 +329,8 @@ function frame(now) {
 
   if (mode === 'playing') {
     const events = stepGame(game, dt, getSteer(input, renderer.w));
-    for (const e of events) {
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
       if (e.type === 'crash') crash(now);
       else if (e.type === 'level') {
         startLevelFade(false);
@@ -356,6 +358,7 @@ function frame(now) {
   view.flash = Math.max(view.flash, updateLightning(now));
   view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
   drawFrame(renderer, game, view);
+  if (DEBUG) updateFps(now);
 }
 
 // ---- Updates (service worker) -----------------------------------------------------
@@ -380,6 +383,64 @@ function registerServiceWorker() {
       });
     })
     .catch(() => {});
+}
+
+// ---- Debug mode (open the page with ?debug=1) -----------------------------------------
+// Shows frames per second, hitbox outlines, an "invincible" switch and buttons
+// to jump to any level. Not linked from anywhere.
+
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
+let fpsFrames = 0;
+let fpsSince = 0;
+let fpsEl = null;
+
+function setupDebug() {
+  const panel = $('debug');
+  panel.classList.remove('hidden');
+  const make = (tag, text, parent) => {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  };
+  fpsEl = make('div', 'FPS –', panel);
+  const toggles = make('div', '', panel);
+  toggles.className = 'row';
+  const inv = make('button', 'Invincible', toggles);
+  inv.addEventListener('click', () => {
+    game.invincible = !game.invincible;
+    inv.classList.toggle('on', game.invincible);
+  });
+  const hit = make('button', 'Hitboxes', toggles);
+  hit.addEventListener('click', () => {
+    view.hitboxes = !view.hitboxes;
+    hit.classList.toggle('on', view.hitboxes);
+  });
+  const levels = make('div', 'Level: ', panel);
+  levels.className = 'row';
+  LEVELS.forEach((level, i) => {
+    const b = make('button', String(i + 1), levels);
+    b.title = level.name;
+    b.addEventListener('click', () => debugJump(i));
+  });
+}
+
+function debugJump(index) {
+  if (mode !== 'playing') startRun();
+  jumpToLevel(game, index);
+  lastLabel = '';
+  startLevelFade(true);
+  updateHud();
+  showBanner(performance.now());
+}
+
+function updateFps(now) {
+  fpsFrames++;
+  if (now - fpsSince >= 500) {
+    fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · cubes ${game.spawner.cubes.length}`;
+    fpsFrames = 0;
+    fpsSince = now;
+  }
 }
 
 // ---- Wire everything up ------------------------------------------------------------
@@ -426,6 +487,7 @@ window.addEventListener('pagehide', pause);
 $('version').textContent = `v${APP_VERSION}`;
 window.addEventListener('resize', () => resizeRenderer(renderer));
 applySettings();
+if (DEBUG) setupDebug();
 updateBestDisplays();
 showScreen('start');
 requestAnimationFrame(frame);
