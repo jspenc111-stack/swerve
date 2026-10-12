@@ -103,7 +103,7 @@ export const LEVELS = [
     name: 'Lagoon',
     pattern: { type: 'clusters', chance: 0.55, min: 3, max: 6 },
     palette: {
-      sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#1d9a90', grid: '#2aaea3',
+      sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
     },
   },

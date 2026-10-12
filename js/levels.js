@@ -65,3 +65,38 @@ export function mixColor(a, b, t) {
   const [br, bg, bb] = hexToRgb(b);
   return rgbToHex(ar + (br - ar) * k, ag + (bg - ag) * k, ab + (bb - ab) * k);
 }
+
+// ---- Palettes ----------------------------------------------------------------
+
+export const PALETTE_KEYS = ['sky', 'skyHorizon', 'ground', 'cube', 'ship', 'text'];
+
+// Blend two level palettes; t = 0 → a, t = 1 → b. Used for the cross-fade.
+// A missing grid fades to/from the ground color (so it quietly disappears).
+export function blendPalette(a, b, t, out = {}) {
+  for (const key of PALETTE_KEYS) out[key] = mixColor(a[key], b[key], t);
+  if (a.grid || b.grid) {
+    out.grid = mixColor(a.grid || a.ground, b.grid || b.ground, t);
+  } else {
+    out.grid = null;
+  }
+  return out;
+}
+
+export function copyPalette(p, out = {}) {
+  for (const key of PALETTE_KEYS) out[key] = p[key];
+  out.grid = p.grid || null;
+  return out;
+}
+
+// ---- Labels ------------------------------------------------------------------
+
+// Banner text, e.g. "Level 4 · Gates" or "Lap 2 · Level 1 · Morning".
+export function bannerText(info) {
+  const base = `Level ${info.listIndex + 1} · ${info.level.name}`;
+  return info.lap > 1 ? `Lap ${info.lap} · ${base}` : base;
+}
+
+// Small label under the score, e.g. "Morning" or "Lap 2 · Morning".
+export function hudLabel(info) {
+  return info.lap > 1 ? `Lap ${info.lap} · ${info.level.name}` : info.level.name;
+}
