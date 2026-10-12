@@ -224,15 +224,6 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 }
 .banner.show { opacity: 1; }
 
-.flash {
-  position: fixed;
-  inset: 0;
-  background: #fff;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 7;
-}
-
 /* ---- Debug panel ---- */
 .debug {
   position: fixed;

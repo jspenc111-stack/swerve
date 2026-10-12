@@ -30,15 +30,15 @@ export const CONFIG = {
 
   // ---- Ship, cubes and camera --------------------------------------------
   shipWidth: 0.8,
-  shipLength: 1.2,
+  shipLength: 1.0,
   hitboxScale: 0.8,         // hitbox is a bit smaller than the drawing (fair near-misses)
   cubeSize: 1.6,
-  cameraHeight: 3.6,        // how high the camera sits above the ground
+  cameraHeight: 2.4,        // how high the camera sits above the ground
   cameraBack: 3,            // how far behind the ship the camera sits
-  focalScale: 0.75,         // zoom: bigger = more zoomed in (narrower view)
-  horizonRatio: 0.38,       // horizon height, as a share of the screen from the top
-  fogStart: 60,             // cubes start fading into the sky beyond this distance
-  fogDistance: 140,         // cubes appear (fully faded) at this distance
+  focalScale: 0.95,         // zoom: bigger = more zoomed in (narrower view)
+  horizonRatio: 0.36,       // horizon height, as a share of the screen from the top
+  fogStart: 45,             // cubes start fading into the sky beyond this distance
+  fogDistance: 110,         // cubes appear (fully faded) at this distance
   maxDevicePixelRatio: 2,   // sharpness cap (higher = crisper but slower)
 
   // ---- Score and levels --------------------------------------------------
