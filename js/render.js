@@ -89,7 +89,7 @@ export function drawFrame(r, game, view) {
   // Ship and HUD effects are not tilted by the bank.
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
-  if (view.showShip !== false) drawShip(r, p, view.lean || 0);
+  if (view.showShip !== false) drawShip(r, p, view.lean || 0, game.speed);
 
   if (view.flash > 0) {
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
@@ -250,48 +250,141 @@ function project(r, x, y, z, out) {
 }
 
 const P = [{}, {}, {}, {}];
+const Q = {};
 
-function drawShip(r, p, lean) {
+// The ship: a swept delta-wing glider with a glass canopy, two glowing
+// engines and short light trails. Shapes are given in ship coordinates:
+// u = -1 (left wingtip) … 1 (right wingtip), v = -1 (tail) … 1 (nose).
+const HULL_RIGHT = [[0, 1], [0.2, 0.3], [1, -0.72], [0.66, -0.66], [0.34, -0.9], [0, -0.62]];
+const CANOPY = [[0, 0.74], [0.13, 0.36], [0.07, 0.1], [-0.07, 0.1], [-0.13, 0.36]];
+const ENGINES = [[-0.3, -0.84], [0.3, -0.84]];
+
+function drawShip(r, p, lean, speed) {
   const { ctx } = r;
   const cfg = r.config;
   const zc = cfg.cameraBack;
   const half = cfg.shipWidth / 2;
   const len = cfg.shipLength;
-  const hover = 0.18;
+  const hover = 0.2;
 
-  // Shadow on the ground.
-  project(r, 0, 0, zc, P[0]);
-  const shadowW = (half * 1.25 * r.f) / zc;
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.beginPath();
-  ctx.ellipse(P[0].x + lean * 30, P[0].y + 4, shadowW, shadowW * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Arrow: nose, right wing, notch, left wing.
-  project(r, 0, hover, zc + len / 2, P[0]);
-  project(r, half, hover, zc - len / 2, P[1]);
-  project(r, 0, hover, zc - len / 5, P[2]);
-  project(r, -half, hover, zc - len / 2, P[3]);
-  const pivotX = P[2].x;
-  const pivotY = P[2].y;
-  ctx.save();
-  ctx.translate(pivotX, pivotY);
-  ctx.rotate(lean);
-  ctx.translate(-pivotX, -pivotY);
   if (r.shipKey !== p.ship) {
     r.shipKey = p.ship;
-    r.shipDark = mixColor(p.ship, '#000000', 0.18);
-    r.shipLight = mixColor(p.ship, '#ffffff', 0.12);
+    r.shipDark = mixColor(p.ship, '#000000', 0.28);
+    r.shipLight = mixColor(p.ship, '#ffffff', 0.14);
+    r.shipEdge = mixColor(p.ship, '#ffffff', 0.6);
+    r.shipGlass = mixColor(p.ship, '#0a0f1e', 0.78);
+    r.shipGlow = mixColor(p.ship, '#ffffff', 0.72);
   }
-  // Right half (darker) then left half (lighter) for a folded look.
-  ctx.fillStyle = r.shipDark;
+
+  // Ship coordinates → screen (true perspective, so the nose looks further away).
+  const toScreen = (u, v) => project(r, u * half, hover, zc + (v * len) / 2, Q);
+
+  // Soft shadow on the ground, shifted toward the turn.
+  project(r, 0, 0, zc, P[0]);
+  const shadowW = (half * 1.2 * r.f) / zc;
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
   ctx.beginPath();
-  ctx.moveTo(P[0].x, P[0].y); ctx.lineTo(P[1].x, P[1].y); ctx.lineTo(P[2].x, P[2].y);
+  ctx.ellipse(P[0].x + lean * 40, P[0].y + 6, shadowW, shadowW * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = r.shipLight;
+
+  // Banking: tilt into the turn and narrow slightly, as if the wings roll.
+  toScreen(0, -0.2);
+  const cx = Q.x;
+  const cy = Q.y;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(lean * 0.7);
+  ctx.scale(1 - Math.min(0.3, Math.abs(lean) * 0.9), 1);
+  ctx.translate(-cx, -cy);
+
+  // Light trails behind the engines (longer when faster).
+  const trail = 14 + (speed || 0) * 1.1;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [u, v] of ENGINES) {
+    toScreen(u, v);
+    const g = ctx.createLinearGradient(Q.x, Q.y, Q.x, Q.y + trail);
+    g.addColorStop(0, r.shipGlow);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(Q.x - 4, Q.y);
+    ctx.lineTo(Q.x + 4, Q.y);
+    ctx.lineTo(Q.x, Q.y + trail);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Hull: lit left half, shaded right half.
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = side < 0 ? r.shipLight : r.shipDark;
+    ctx.beginPath();
+    for (let i = 0; i < HULL_RIGHT.length; i++) {
+      toScreen(HULL_RIGHT[i][0] * side, HULL_RIGHT[i][1]);
+      if (i === 0) ctx.moveTo(Q.x, Q.y); else ctx.lineTo(Q.x, Q.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Bright leading edges and a centre ridge.
+  ctx.strokeStyle = r.shipEdge;
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(P[0].x, P[0].y); ctx.lineTo(P[2].x, P[2].y); ctx.lineTo(P[3].x, P[3].y);
+  toScreen(-1, -0.72); ctx.moveTo(Q.x, Q.y);
+  toScreen(-0.2, 0.3); ctx.lineTo(Q.x, Q.y);
+  toScreen(0, 1); ctx.lineTo(Q.x, Q.y);
+  toScreen(0.2, 0.3); ctx.lineTo(Q.x, Q.y);
+  toScreen(1, -0.72); ctx.lineTo(Q.x, Q.y);
+  ctx.stroke();
+  ctx.globalAlpha = 0.45;
+  ctx.beginPath();
+  toScreen(0, 0.1); ctx.moveTo(Q.x, Q.y);
+  toScreen(0, -0.62); ctx.lineTo(Q.x, Q.y);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Glass canopy with a small highlight.
+  ctx.fillStyle = r.shipGlass;
+  ctx.beginPath();
+  for (let i = 0; i < CANOPY.length; i++) {
+    toScreen(CANOPY[i][0], CANOPY[i][1]);
+    if (i === 0) ctx.moveTo(Q.x, Q.y); else ctx.lineTo(Q.x, Q.y);
+  }
+  ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  toScreen(-0.05, 0.6); ctx.moveTo(Q.x, Q.y);
+  toScreen(-0.09, 0.36); ctx.lineTo(Q.x, Q.y);
+  ctx.stroke();
+
+  // Engine glow (a gentle flicker) and wingtip lights.
+  const flicker = 0.85 + 0.15 * Math.sin(performance.now() / 45);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [u, v] of ENGINES) {
+    toScreen(u, v);
+    const rad = 9 * flicker;
+    const g = ctx.createRadialGradient(Q.x, Q.y, 0, Q.x, Q.y, rad);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.35, r.shipGlow);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(Q.x, Q.y, rad, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#ffffff';
+  for (const u of [-1, 1]) {
+    toScreen(u * 0.97, -0.7);
+    ctx.beginPath();
+    ctx.arc(Q.x, Q.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
