@@ -1,4 +1,5 @@
 {
+  "id": "swerve",
   "name": "Swerve",
   "short_name": "Swerve",
   "description": "Steer an arrow across an endless field and swerve around cubes.",
