@@ -62,6 +62,8 @@ test('paths are relative (the site lives in a /swerve/ subfolder)', () => {
   }
   const manifest = JSON.parse(read('manifest.webmanifest'));
   assert.equal(manifest.start_url, './');
+  // A fixed app ID keeps Chrome from mixing up installs (never change it once set).
+  assert.equal(manifest.id, 'swerve');
   assert.equal(manifest.scope, './');
   for (const icon of manifest.icons) assert.ok(icon.src.startsWith('./'));
   for (const f of appFiles().filter((x) => x.endsWith('.js'))) {

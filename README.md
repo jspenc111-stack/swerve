@@ -21,6 +21,12 @@ Open the game's web address in Chrome on the phone. It ends in `.github.io/swerv
 - After level 8 you go round again as "Lap 2", faster.
 - Tap ⏸ to pause. The game also pauses by itself if you switch apps.
 
+## Chrome says "already installed" but there's no icon
+
+1. Swipe up on the home screen and look for **Swerve** in the app list. If it's there, press and hold it and drag it to the home screen.
+2. If it isn't there: phone **Settings → Apps → See all apps → Swerve → Uninstall** (if listed). Restart the phone, open the game's web address in Chrome, then **⋮ → Add to Home screen → Install**.
+3. Don't use Chrome's "Clear site data" for this site: other apps share the same web address and would lose their saved data.
+
 ## Is there an update?
 
 The version number is shown small at the bottom of the start screen (for example `v1.0.0`). Each change gets a new number. When you're online, the app picks up the newest version by itself. If you don't see the new number yet, close the app completely and open it again.
