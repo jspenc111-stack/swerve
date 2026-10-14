@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.0.2';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
