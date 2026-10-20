@@ -69,14 +69,18 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
 
 1. **Start screen**
    - Title "Swerve", best score, a big **Play** button and a ⚙︎ settings button.
-   - A short how-to line: "Hold left or right side to steer."
+   - **Level picker**: a grid of all levels (number, name and a small color swatch). Play starts the run at the chosen level, which is remembered. All levels are always available. The menu background shows the chosen level's colors.
+   - A short how-to line: "Hold left or right side to steer. Hold Boost to go faster."
+   - **History** button (see 6).
+   - **Install app** button, shown only when Chrome offers to install. If Chrome never offers within a few seconds and the game isn't running as the installed app, a "Can't install the app?" link opens step-by-step help (see 7).
    - The app version is shown small at the bottom (e.g. `v1.0.3`), so the owner can confirm an update arrived.
 2. **Playing**
    - Score at the top center, level name small underneath, a pause ⏸ button in the top corner.
+   - A round **Boost** button at the bottom center: hold it to go faster (see §6). It keeps its own touch, so you can steer with one thumb and boost with the other.
    - When a level starts, a banner fades in and out (e.g. "Level 4 · Gates").
 3. **Paused**: Resume, Restart and Quit to menu.
 4. **Game over**
-   - Final score, level reached and best score. Show "New best!" with a small celebration when it applies.
+   - Final score, level reached (and the start level, if not 1) and best score. Show "New best!" with a small celebration when it applies. Otherwise, for a top-10 run, show "Your #3 score out of 27 runs".
    - **Play again** (big) and **Menu**.
    - Restarting must be instant: one tap, no loading.
 5. **Settings**
@@ -84,6 +88,11 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
    - Sound on/off (default on).
    - Vibration on/off (default on).
    - "Reset best score", with a confirm step.
+6. **History**
+   - Every finished run with points: score, level reached (and start level), and date/time ("Today 3:41 PM", "Yesterday …", "Oct 18, …").
+   - Two tabs: *Recent* (newest first) and *Top scores* (highest first, numbered). The best score has a ★.
+   - Keeps the newest `historyMax` runs (100). "Clear history" with a confirm step (the best score stays).
+7. **Install help**: how to install from Chrome, and how to remove a broken leftover copy when Chrome says "already installed" but the app won't open (Play Store → Manage apps → uninstall; or Settings → Apps → Archived/Disabled). Warns not to use Chrome's "Clear site data", which would also wipe other apps on the same web address.
 
 ---
 
@@ -124,6 +133,8 @@ All numbers below are **starting values in `config.js`**, not fixed rules.
   - by `speedPerLevel` at each new level, and
   - gently within a level, by `speedRampPerSecond`.
 - Steering uses sideways **velocity with acceleration**, not instant jumps, so it feels smooth: `steerAccel`, `maxSteerSpeed` and `steerFriction` (slowdown when you let go).
+- **Boost**: while the Boost button (or ↑/W) is held, speed eases up to `boostMultiplier` × normal (1.5×), and eases back when released (`boostEase`). More speed means points come faster. Obstacles are always laid out for full-boost speed, so the open path stays reachable whether or not you boost.
+- **Ship banking**: the ship is a small 3D model. Turning rolls it (one wing dips, up to `shipLeanDeg`) and turns the nose slightly toward the slide (`shipYawFactor`), so it still looks like it's flying forward.
 
 ### Controls (`input.js`)
 - **Hold sides** (default): touching the left half steers left and the right half steers right. Multi-touch uses the most recent touch.
@@ -132,10 +143,10 @@ All numbers below are **starting values in `config.js`**, not fixed rules.
   - The neutral position is calibrated when a run starts, with a small dead zone so it doesn't drift.
   - Tilt data is used only in memory, never stored or sent.
 - **Drag**: steer toward where your finger is, relative to where it first touched.
-- **Keyboard** (for testing on a computer): ← → or A/D steer, space pauses.
+- **Keyboard** (for testing on a computer): ← → or A/D steer, ↑ or W boosts, space pauses.
 
 ### Score and levels
-- The score increases with distance traveled.
+- The score increases with distance traveled in this run (starting at a later level starts the score at 0). The level depends on how far along the course you are.
 - A new level starts every `levelLength` points (aim for about 30–40 seconds per level).
 - **Level change**:
   1. Clear a short obstacle-free stretch so the player can breathe.
@@ -163,8 +174,8 @@ Every pattern is defined in config and uses a seeded random generator, so tests 
 | Pattern | What it looks like |
 |---|---|
 | `scatter` | Randomly placed cubes; how many is set by `density`. |
-| `clusters` | Small groups of 3–6 cubes with open lanes between them. |
-| `gates` | Rows of cubes spanning the field, each with one gap. The gap shifts left and right from row to row, so you weave through them like a slalom. |
+| `clusters` | "Islands": small groups of 3–6 separate cubes (with a little room between them, never one solid clump) and open ground between groups. |
+| `gates` | Slalom gates: an opening flanked by a short fence of spaced posts on each side (`wingCubes`, too close together to squeeze between). The opening swings left and right from gate to gate. Optional loose cubes between gates (`between`). |
 | `canyon` | Two walls of cubes forming a winding corridor. The path curves using smooth random turns. |
 | `mixed` | Alternates between the above every few seconds. |
 
@@ -217,6 +228,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 
 ### Service worker (`sw.js`)
 - **Network-first for all of the app's own files, falling back to cache when offline.** The owner always gets the newest version when online, and the game still works offline.
+  - If the site answers with an error (for example a 404 while GitHub Pages is down), the saved copy is used too, so the installed game keeps working.
   - This avoids the "stuck on an old version until I clear the cache" problem seen in the owner's other apps.
 - The cache name includes `APP_VERSION`. On activate, delete old caches and call `clients.claim()`.
 - When a new service worker takes over, reload the page once, but only if the player is **not** mid-run.
@@ -237,7 +249,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ## 10. Privacy (hard rules)
 
 - **No accounts, no server and no database.** The game runs entirely on the phone.
-- **The only stored data** is the best score, best level and settings, kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved.
+- **The only stored data** is the best score, best level, settings (including the chosen start level) and the score history (score, level reached, start level and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
 - **Nothing is ever sent anywhere.**
   - No analytics, ads, trackers or crash reporting.
   - No third-party scripts, fonts or CDNs.
@@ -310,7 +322,6 @@ It isn't linked from anywhere. It helps the owner preview new levels quickly.
 
 ## 13. Ideas for later (don't build now)
 
-- Practice mode: start from any level you've reached.
 - Power-ups (slow-motion, shield).
 - New ship designs unlocked by score.
 - Daily challenge with a fixed seed.

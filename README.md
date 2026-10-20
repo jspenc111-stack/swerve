@@ -17,15 +17,21 @@ Open the game's web address in Chrome on the phone. It ends in `.github.io/swerv
 ## How to play
 
 - **Hold the left or right side** of the screen to steer (you can switch to *Tilt phone* or *Drag* in ⚙︎ Settings).
+- **Hold the Boost button** (bottom middle) to go 1.5× faster. You score faster too.
+- **Pick a starting level** on the menu, then tap Play.
+- **History** on the menu shows every run's score, level and when you played (Recent or Top scores).
 - Don't touch the cubes. The game gets faster, and every level brings new colors and new obstacle patterns.
 - After level 8 you go round again as "Lap 2", faster.
 - Tap ⏸ to pause. The game also pauses by itself if you switch apps.
 
-## Chrome says "already installed" but there's no icon
+## Chrome says "already installed" but it won't open
 
-1. Swipe up on the home screen and look for **Swerve** in the app list. If it's there, press and hold it and drag it to the home screen.
-2. If it isn't there: phone **Settings → Apps → See all apps → Swerve → Uninstall** (if listed). Restart the phone, open the game's web address in Chrome, then **⋮ → Add to Home screen → Install**.
-3. Don't use Chrome's "Clear site data" for this site: other apps share the same web address and would lose their saved data.
+This means a broken copy is left on the phone. The game's menu has the same help under **Can't install the app?**
+
+1. Swipe up on the home screen and look for **Swerve** in the app list. If it's there and opens, press and hold it and drag it to the home screen.
+2. Otherwise remove the broken copy: **Play Store → profile picture → Manage apps & device → Manage → Swerve → Uninstall**. If it isn't there, try phone **Settings → Apps → See all apps**, switch the list to **Archived** or **Disabled**, and uninstall Swerve.
+3. Restart the phone, open the game's web address in Chrome, then **⋮ → Add to Home screen → Install**.
+4. Don't use Chrome's "Clear site data" for this site: other apps share the same web address and would lose their saved data.
 
 ## Is there an update?
 
@@ -34,7 +40,7 @@ The version number is shown small at the bottom of the start screen (for example
 ## Privacy
 
 - No accounts, no ads, no tracking, and nothing is ever sent anywhere.
-- The only thing saved is your best score, best level and settings, kept on the phone itself.
+- The only things saved are your best score, best level, settings and your score history (score, level and when), kept on the phone itself.
 - If you use *Tilt phone*, the tilt readings are used live for steering and never stored.
 
 ## Asking for changes

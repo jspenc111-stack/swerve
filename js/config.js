@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.0.2';
+export const APP_VERSION = '1.1.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -19,6 +19,8 @@ export const CONFIG = {
   speedRampPerSecond: 0.08, // gentle extra speed while you stay in a level
   lapSpeedBonus: 5,         // extra speed for each lap after the first
   maxFrameTime: 0.05,       // seconds; a phone hiccup can't skip further than this
+  boostMultiplier: 1.5,     // holding the boost button makes you this many times faster
+  boostEase: 5,             // how quickly boost kicks in and fades (higher = snappier)
 
   // ---- Steering ----------------------------------------------------------
   steerAccel: 55,           // how quickly sideways speed builds up
@@ -26,7 +28,8 @@ export const CONFIG = {
   steerFriction: 7,         // how quickly you stop drifting when you let go
   bankMaxDeg: 6,            // how far the view tilts while steering
   bankEase: 6,              // how quickly the tilt follows (higher = snappier)
-  shipLeanDeg: 16,          // how far the ship leans into turns
+  shipLeanDeg: 26,          // how far the ship rolls (dips a wing) into turns
+  shipYawFactor: 0.25,      // how much the nose points the way you're sliding (0–1)
 
   // ---- Ship, cubes and camera --------------------------------------------
   shipWidth: 0.8,
@@ -53,8 +56,11 @@ export const CONFIG = {
   minGapWidth: 2.0,         // narrowest gap ever allowed (2.5 × ship width)
   spawnBandHalfWidth: 30,   // cubes appear this far to each side of the ship
   laneLeash: 10,            // the always-open path stays this close to the ship
-  laneSlopeFactor: 0.5,     // how sharply the open path may bend (share of max steering)
+  laneSlopeFactor: 0.65,    // how sharply the open path may bend (share of max steering at full boost)
   spawnStep: 4,             // distance between obstacle "rows" the spawner works in
+
+  // ---- Score history ---------------------------------------------------
+  historyMax: 100,          // how many past runs to keep on the phone
 
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
@@ -74,8 +80,11 @@ export const CONFIG = {
 //
 // pattern.type is one of: scatter, clusters, gates, canyon, mixed.
 //   scatter  — density: cubes per spawn row (more = harder)
-//   clusters — chance: chance of a group per row; min/max: cubes per group
-//   gates    — rowSpacing: distance between gates; gapWidth: size of the hole
+//   clusters — "islands" of separate cubes. chance: chance of an island per row;
+//              min/max: cubes per island
+//   gates    — slalom gates. rowSpacing: distance between gates; gapWidth: size of
+//              the opening; wingCubes: fence posts on each side (optional, 5);
+//              between: loose cubes per row between gates (optional, 0)
 //   canyon   — width: corridor width; wallDepth: wall thickness; extra: stray cubes outside
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
 // palette: sky, skyHorizon, ground, cube, ship, text, and optional grid.
@@ -101,7 +110,7 @@ export const LEVELS = [
   },
   {
     name: 'Lagoon',
-    pattern: { type: 'clusters', chance: 0.55, min: 3, max: 6 },
+    pattern: { type: 'clusters', chance: 0.6, min: 3, max: 5 },
     palette: {
       sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
@@ -109,7 +118,7 @@ export const LEVELS = [
   },
   {
     name: 'Gates',
-    pattern: { type: 'gates', rowSpacing: 16, gapWidth: 3.2 },
+    pattern: { type: 'gates', rowSpacing: 18, gapWidth: 3.2, wingCubes: 4, between: 1 },
     palette: {
       sky: '#c4b1e6', skyHorizon: '#efe7fa', ground: '#f6efdc', grid: '#e6d9bd',
       cube: '#7a49b4', ship: '#e46f35', text: '#2d1e46',
@@ -138,7 +147,7 @@ export const LEVELS = [
       type: 'mixed', segmentLength: 160,
       sequence: [
         { type: 'scatter', density: 2.8 },
-        { type: 'gates', rowSpacing: 16, gapWidth: 3.2 },
+        { type: 'gates', rowSpacing: 16, gapWidth: 3.2, wingCubes: 5, between: 0.8 },
         { type: 'clusters', chance: 0.6, min: 3, max: 6 },
       ],
     },
@@ -156,7 +165,7 @@ export const LEVELS = [
       sequence: [
         { type: 'scatter', density: 3.4 },
         { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.8 },
-        { type: 'gates', rowSpacing: 15, gapWidth: 3.0 },
+        { type: 'gates', rowSpacing: 15, gapWidth: 3.0, wingCubes: 6, between: 1.2 },
         { type: 'clusters', chance: 0.7, min: 3, max: 6 },
       ],
     },

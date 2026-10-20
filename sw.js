@@ -65,19 +65,29 @@ async function networkFirst(request, url) {
   try {
     // 'no-cache' asks the site whether the file changed, skipping stale browser copies.
     const fresh = await fetch(new Request(url.href, { cache: 'no-cache', credentials: 'same-origin' }));
-    if (fresh && fresh.ok && !url.pathname.endsWith('/sw.js')) {
-      cache.put(stripSearch(url), fresh.clone());
+    if (fresh.ok) {
+      if (!url.pathname.endsWith('/sw.js')) cache.put(stripSearch(url), fresh.clone());
+      return fresh;
     }
-    return fresh;
+    // The site answered with an error (e.g. 404 while GitHub Pages is down):
+    // keep playing from the saved copy if there is one.
+    const saved = await savedCopy(cache, request, url);
+    return saved || fresh;
   } catch (err) {
-    const cached = await cache.match(stripSearch(url));
-    if (cached) return cached;
-    if (request.mode === 'navigate') {
-      const page = (await cache.match('./')) || (await cache.match('./index.html'));
-      if (page) return page;
-    }
+    // Offline: use the saved copy.
+    const saved = await savedCopy(cache, request, url);
+    if (saved) return saved;
     throw err;
   }
+}
+
+async function savedCopy(cache, request, url) {
+  const cached = await cache.match(stripSearch(url));
+  if (cached) return cached;
+  if (request.mode === 'navigate') {
+    return (await cache.match('./')) || (await cache.match('./index.html')) || null;
+  }
+  return null;
 }
 
 // "?debug=1" and similar shouldn't create separate cached copies.

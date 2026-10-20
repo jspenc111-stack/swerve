@@ -6,9 +6,12 @@ import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
 import { blendPalette, copyPalette, bannerText, hudLabel } from './levels.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
-  createInput, getSteer, clearInput, setControlMode, calibrateTilt, requestTiltPermission,
+  createInput, getSteer, getBoost, bindBoostButton, clearInput, setControlMode, calibrateTilt,
+  requestTiltPermission,
 } from './input.js';
-import { loadSave, writeSave, recordRun, defaultSave } from './storage.js';
+import {
+  loadSave, writeSave, recordRun, defaultSave, rankOf, sortedHistory, clearHistory,
+} from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, vibrate,
 } from './audio.js';
@@ -19,16 +22,19 @@ const canvas = $('game');
 const renderer = createRenderer(canvas, CONFIG);
 const input = createInput(canvas, CONFIG);
 const game = createGame(CONFIG, LEVELS, (Date.now() >>> 0) || 1);
-const save = loadSave();
+const save = loadSave(undefined, CONFIG.historyMax);
+bindBoostButton(input, $('btn-boost'));
 
 const screens = {
   start: $('screen-start'),
   pause: $('screen-pause'),
   over: $('screen-over'),
   settings: $('screen-settings'),
+  history: $('screen-history'),
+  install: $('screen-install'),
 };
 
-// menu | playing | paused | crashing | over | settings
+// menu | playing | paused | crashing | over | settings | history | install
 let mode = 'menu';
 let lastTime = 0;
 let crashAt = 0;
@@ -48,7 +54,7 @@ let strikeStart = -1;
 
 const view = {
   palette: shownPalette,
-  bank: 0, roll: 0, shakeX: 0, shakeY: 0, flash: 0, glow: 0, lean: 0,
+  bank: 0, roll: 0, shakeX: 0, shakeY: 0, flash: 0, glow: 0, lean: 0, yaw: 0,
   showShip: true, hitboxes: false,
 };
 
@@ -174,15 +180,20 @@ function updateBestDisplays() {
 }
 
 const HOWTO = {
-  sides: 'Hold left or right side to steer.',
-  tilt: 'Tilt your phone to steer.',
-  drag: 'Drag left or right to steer.',
+  sides: 'Hold left or right side to steer. Hold Boost to go faster.',
+  tilt: 'Tilt your phone to steer. Hold Boost to go faster.',
+  drag: 'Drag left or right to steer. Hold Boost to go faster.',
 };
+
+// The chosen starting level (0-based), kept within the level list.
+function startLevelIndex() {
+  return Math.min(Math.max(save.settings.startLevel, 1), LEVELS.length) - 1;
+}
 
 function startRun() {
   unlockAudio();
   if (save.settings.controls === 'tilt') requestTiltPermission();
-  resetGame(game);
+  resetGame(game, undefined, startLevelIndex());
   clearInput(input);
   calibrateTilt(input);
   lastScoreShown = -1;
@@ -221,8 +232,9 @@ function toMenu() {
     return;
   }
   mode = 'menu';
-  resetGame(game);
+  resetGame(game, undefined, startLevelIndex());
   startLevelFade(true);
+  renderPicker();
   view.bank = 0;
   hideBanner();
   updateBestDisplays();
@@ -241,10 +253,17 @@ function crash(now) {
 function showGameOver() {
   mode = 'over';
   const levelNumber = game.levelIndex + 1;
-  const newBest = recordRun(save, game.score, levelNumber);
+  const startNumber = game.startLevel + 1;
+  const newBest = recordRun(save, game.score, levelNumber, startNumber, Date.now(), CONFIG.historyMax);
   writeSave(save);
   $('over-score').textContent = game.score;
-  $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(game.info)}`;
+  $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(game.info)}` +
+    (startNumber > 1 ? ` (started at ${startNumber})` : '');
+  // "Your #3 score" for a good run that isn't a new best.
+  const rank = rankOf(save, game.score);
+  const rankEl = $('over-rank');
+  rankEl.classList.toggle('hidden', newBest || game.score === 0 || rank > 10 || save.history.length < 3);
+  rankEl.textContent = `Your #${rank} score out of ${save.history.length} runs`;
   const nb = $('over-newbest');
   nb.classList.add('hidden');
   if (newBest) {
@@ -290,6 +309,137 @@ function changeSetting(fn) {
   renderSettings();
 }
 
+// ---- Level picker (start screen) ------------------------------------------------
+
+function buildPicker() {
+  const box = $('level-picker');
+  LEVELS.forEach((level, i) => {
+    const b = document.createElement('button');
+    b.className = 'level-chip';
+    b.setAttribute('role', 'radio');
+    b.dataset.level = String(i + 1);
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    const p = level.palette;
+    swatch.style.background = `linear-gradient(${p.sky} 0%, ${p.skyHorizon} 48%, ${p.ground} 52%, ${p.ground} 100%)`;
+    const cube = document.createElement('span');
+    cube.className = 'swatch-cube';
+    cube.style.background = p.cube;
+    swatch.appendChild(cube);
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = String(i + 1);
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = level.name;
+    b.append(swatch, num, name);
+    b.addEventListener('click', () => pickLevel(i + 1));
+    box.appendChild(b);
+  });
+  renderPicker();
+}
+
+function renderPicker() {
+  for (const b of document.querySelectorAll('.level-chip')) {
+    b.setAttribute('aria-checked', String(Number(b.dataset.level) === startLevelIndex() + 1));
+  }
+}
+
+function pickLevel(n) {
+  save.settings.startLevel = n;
+  writeSave(save);
+  renderPicker();
+  if (mode === 'menu') {
+    // Show the chosen level's colors behind the menu.
+    resetGame(game, undefined, startLevelIndex());
+    startLevelFade(false);
+  }
+}
+
+// ---- Score history --------------------------------------------------------------
+
+let historyOrder = 'recent';
+
+function openHistory() {
+  mode = 'history';
+  $('history-confirm').classList.add('hidden');
+  renderHistory();
+  showScreen('history');
+}
+
+function renderHistory() {
+  for (const b of document.querySelectorAll('[data-order]')) {
+    b.setAttribute('aria-checked', String(b.dataset.order === historyOrder));
+  }
+  const list = $('history-list');
+  list.textContent = '';
+  const runs = sortedHistory(save, historyOrder);
+  $('history-empty').classList.toggle('hidden', runs.length > 0);
+  $('btn-history-clear').classList.toggle('hidden', runs.length === 0);
+  const best = runs.reduce((m, r) => Math.max(m, r.score), 0);
+  runs.forEach((run, i) => {
+    const li = document.createElement('li');
+    const left = document.createElement('span');
+    left.className = 'h-score';
+    left.textContent = (historyOrder === 'top' ? `${i + 1}. ` : '') + run.score + (run.score === best ? ' ★' : '');
+    const mid = document.createElement('span');
+    mid.className = 'h-level';
+    const lvl = LEVELS[(run.level - 1) % LEVELS.length];
+    mid.textContent = `Level ${run.level}${lvl ? ` · ${lvl.name}` : ''}` +
+      (run.startLevel > 1 ? ` (from ${run.startLevel})` : '');
+    const right = document.createElement('span');
+    right.className = 'h-when';
+    right.textContent = formatWhen(run.at);
+    li.append(left, mid, right);
+    list.appendChild(li);
+  });
+}
+
+// "Today 3:41 PM", "Yesterday 9:05 AM", "Oct 18, 3:41 PM" (in the phone's own format).
+function formatWhen(t) {
+  const d = new Date(t);
+  const now = new Date();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `Today ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return `${d.toLocaleDateString(undefined, opts)}, ${time}`;
+}
+
+// ---- Installing the app -------------------------------------------------------------
+// Shows an "Install app" button when Chrome offers it. If Chrome never offers
+// (for example because it wrongly thinks Swerve is already installed), shows a
+// "Can't install?" link with step-by-step help instead.
+
+let installPrompt = null;
+let installHelpReady = false;
+
+function runningAsApp() {
+  return matchMedia('(display-mode: fullscreen)').matches ||
+    matchMedia('(display-mode: standalone)').matches ||
+    navigator.standalone === true;
+}
+
+function updateInstallUi() {
+  const inApp = runningAsApp();
+  $('btn-install').classList.toggle('hidden', inApp || !installPrompt);
+  $('btn-install-help').classList.toggle('hidden', inApp || !!installPrompt || !installHelpReady);
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  updateInstallUi();
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  updateInstallUi();
+});
+setTimeout(() => { installHelpReady = true; updateInstallUi(); }, 4000);
+
 // ---- Keep the screen awake while playing ----------------------------------------
 
 let wakeLock = null;
@@ -328,7 +478,7 @@ function frame(now) {
   view.shakeY = 0;
 
   if (mode === 'playing') {
-    const events = stepGame(game, dt, getSteer(input, renderer.w));
+    const events = stepGame(game, dt, getSteer(input, renderer.w), getBoost(input));
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (e.type === 'crash') crash(now);
@@ -357,6 +507,7 @@ function frame(now) {
   updateRoll();
   view.flash = Math.max(view.flash, updateLightning(now));
   view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
+  view.yaw = CONFIG.shipYawFactor * Math.atan2(game.vx, Math.max(1, game.speed));
   drawFrame(renderer, game, view);
   if (DEBUG) updateFps(now);
 }
@@ -373,7 +524,7 @@ function registerServiceWorker() {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || reloadPending) return; // first install: nothing to reload
     reloadPending = true;
-    if (mode === 'menu' || mode === 'settings') location.reload();
+    if (mode === 'menu' || mode === 'settings' || mode === 'history' || mode === 'install') location.reload();
   });
   navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`)
     .then((reg) => {
@@ -454,6 +605,26 @@ $('btn-restart').addEventListener('click', startRun);
 $('btn-quit').addEventListener('click', toMenu);
 $('btn-settings').addEventListener('click', openSettings);
 $('btn-settings-done').addEventListener('click', toMenu);
+$('btn-history').addEventListener('click', openHistory);
+$('btn-history-done').addEventListener('click', toMenu);
+for (const b of document.querySelectorAll('[data-order]')) {
+  b.addEventListener('click', () => { historyOrder = b.dataset.order; renderHistory(); });
+}
+$('btn-history-clear').addEventListener('click', () => $('history-confirm').classList.remove('hidden'));
+$('btn-history-clear-no').addEventListener('click', () => $('history-confirm').classList.add('hidden'));
+$('btn-history-clear-yes').addEventListener('click', () => {
+  clearHistory(save);
+  writeSave(save);
+  $('history-confirm').classList.add('hidden');
+  renderHistory();
+});
+$('btn-install').addEventListener('click', () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  installPrompt.userChoice.finally(() => { installPrompt = null; updateInstallUi(); });
+});
+$('btn-install-help').addEventListener('click', () => { mode = 'install'; showScreen('install'); });
+$('btn-install-done').addEventListener('click', toMenu);
 
 for (const btn of document.querySelectorAll('[data-controls]')) {
   btn.addEventListener('click', () => changeSetting((s) => { s.controls = btn.dataset.controls; }));
@@ -487,6 +658,10 @@ window.addEventListener('pagehide', pause);
 $('version').textContent = `v${APP_VERSION}`;
 window.addEventListener('resize', () => resizeRenderer(renderer));
 applySettings();
+buildPicker();
+resetGame(game, undefined, startLevelIndex());
+startLevelFade(true);
+updateInstallUi();
 if (DEBUG) setupDebug();
 updateBestDisplays();
 showScreen('start');

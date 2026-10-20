@@ -25,6 +25,13 @@
       <div id="hud-level" class="hud-level"></div>
     </div>
     <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
+    <button id="btn-boost" class="boost-btn" aria-label="Boost (hold to go faster)">
+      <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+        <path d="M12 3 4 11h5v3l3-3 3 3v-3h5z" fill="currentColor"/>
+        <path d="M12 11 6 17h4v4h4v-4h4z" fill="currentColor" opacity="0.65"/>
+      </svg>
+      <span>Boost</span>
+    </button>
   </div>
 
   <div id="banner" class="banner" aria-live="polite"></div>
@@ -34,8 +41,15 @@
     <div class="panel">
       <h1 class="title">Swerve</h1>
       <p class="best">Best: <span id="start-best">0</span></p>
+      <p class="label">Start at level</p>
+      <div id="level-picker" class="level-picker" role="radiogroup" aria-label="Start at level"></div>
       <button id="btn-play" class="big-btn">Play</button>
       <p class="howto" id="start-howto">Hold left or right side to steer.</p>
+      <div class="row-btns">
+        <button id="btn-history" class="mid-btn">History</button>
+        <button id="btn-install" class="mid-btn hidden">Install app</button>
+      </div>
+      <button id="btn-install-help" class="link-btn hidden">Can't install the app?</button>
       <button id="btn-settings" class="icon-btn settings-btn" aria-label="Settings">⚙︎</button>
     </div>
     <div class="version" id="version"></div>
@@ -58,6 +72,7 @@
       <p id="over-newbest" class="newbest hidden">New best!</p>
       <p class="final-score" id="over-score">0</p>
       <p class="over-line" id="over-level"></p>
+      <p class="over-line hidden" id="over-rank"></p>
       <p class="over-line">Best: <span id="over-best">0</span></p>
       <button id="btn-again" class="big-btn">Play again</button>
       <button id="btn-menu" class="mid-btn">Menu</button>
@@ -83,6 +98,42 @@
         <button id="btn-reset-no" class="mid-btn">Cancel</button>
       </div>
       <button id="btn-settings-done" class="big-btn">Done</button>
+    </div>
+  </section>
+
+  <!-- Score history -->
+  <section id="screen-history" class="screen hidden">
+    <div class="panel">
+      <h2>History</h2>
+      <div class="choice" role="radiogroup" aria-label="Sort">
+        <button class="choice-btn" data-order="recent" role="radio">Recent</button>
+        <button class="choice-btn" data-order="top" role="radio">Top scores</button>
+      </div>
+      <ol id="history-list" class="history-list"></ol>
+      <p id="history-empty" class="howto hidden">No runs yet. Go play!</p>
+      <button id="btn-history-clear" class="mid-btn danger">Clear history</button>
+      <div id="history-confirm" class="confirm hidden">
+        <p>Erase all past runs? (Your best score stays.)</p>
+        <button id="btn-history-clear-yes" class="mid-btn danger">Yes, clear</button>
+        <button id="btn-history-clear-no" class="mid-btn">Cancel</button>
+      </div>
+      <button id="btn-history-done" class="big-btn">Done</button>
+    </div>
+  </section>
+
+  <!-- Install help -->
+  <section id="screen-install" class="screen hidden">
+    <div class="panel help">
+      <h2>Installing Swerve</h2>
+      <p><b>To install:</b> in Chrome, tap <b>⋮ → Add to Home screen → Install</b>.</p>
+      <p><b>Chrome says it's already installed, but it won't open?</b> A broken copy is left on the phone. Remove it:</p>
+      <ol>
+        <li>Open the <b>Play Store</b> → tap your profile picture → <b>Manage apps &amp; device → Manage</b>. Find <b>Swerve</b> and uninstall it.</li>
+        <li>If it isn't there: <b>Settings → Apps → See all apps</b>, switch the list to <b>Archived</b> or <b>Disabled</b>, and uninstall Swerve.</li>
+        <li>Restart the phone, open this page in Chrome and install again.</li>
+      </ol>
+      <p class="warn">Avoid Chrome's “Clear site data” for this site: other apps on the same web address would lose their saved data too.</p>
+      <button id="btn-install-done" class="big-btn">OK</button>
     </div>
   </section>
 
