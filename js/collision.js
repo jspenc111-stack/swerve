@@ -38,3 +38,30 @@ export function findCollision(ship, cubes) {
   }
   return null;
 }
+
+// ---- 3D Flight mode ------------------------------------------------------------
+// Obstacles are boxes: centre x, bottom y, centre z, and size w (sideways),
+// h (height), d (depth). The jet's hitbox is centred on (x, y, z).
+
+export function flightHitbox(x, y, z, config, out = {}) {
+  const k = config.flightHitboxScale;
+  out.x = x;
+  out.y = y;
+  out.z = z;
+  out.halfW = (config.flightShipSpan * k) / 2;
+  out.halfH = (config.flightShipHeight * k) / 2;
+  out.halfD = (config.flightShipLength * k) / 2;
+  return out;
+}
+
+// True if the hitbox and the box overlap in all three directions (touching is not a hit).
+export function hitsBox(hb, b) {
+  return Math.abs(hb.z - b.z) < hb.halfD + b.d / 2 &&
+         Math.abs(hb.x - b.x) < hb.halfW + b.w / 2 &&
+         hb.y + hb.halfH > b.y && hb.y - hb.halfH < b.y + b.h;
+}
+
+export function findBoxCollision(hb, boxes) {
+  for (let i = 0; i < boxes.length; i++) if (hitsBox(hb, boxes[i])) return boxes[i];
+  return null;
+}

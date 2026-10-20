@@ -16,6 +16,13 @@ Open the game's web address in Chrome on the phone. It ends in `.github.io/swerv
 
 ## How to play
 
+There are two modes, chosen at the top of the menu:
+
+- **Classic**: steer left and right around cubes.
+- **3D Flight**: fly a jet up, down and around floating blocks, towers, walls with windows and tunnels. Put your thumb anywhere and drag like a joystick (or tilt the phone, if you chose Tilt in Settings). Fly through the gold rings for bonus points. The bar on the right shows your height. Settings has an option to invert up/down, like a plane.
+
+In both modes:
+
 - **Hold the left or right side** of the screen to steer (you can switch to *Tilt phone* or *Drag* in ⚙︎ Settings).
 - **Hold the Boost button** (bottom middle) to go 1.5× faster. You score faster too.
 - **Pick a starting level** on the menu, then tap Play.

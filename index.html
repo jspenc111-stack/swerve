@@ -25,6 +25,11 @@
       <div id="hud-level" class="hud-level"></div>
     </div>
     <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
+    <div id="altimeter" class="altimeter hidden" aria-hidden="true">
+      <div class="alt-track"><div id="alt-marker" class="alt-marker"></div></div>
+      <div class="alt-label">ALT</div>
+    </div>
+    <div id="toast" class="toast" aria-live="polite"></div>
     <button id="btn-boost" class="boost-btn" aria-label="Boost (hold to go faster)">
       <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
         <path d="M12 3 4 11h5v3l3-3 3 3v-3h5z" fill="currentColor"/>
@@ -40,6 +45,10 @@
   <section id="screen-start" class="screen">
     <div class="panel">
       <h1 class="title">Swerve</h1>
+      <div class="mode-switch" role="radiogroup" aria-label="Game mode">
+        <button class="mode-btn" data-mode="classic" role="radio">Classic<small>Steer left &amp; right</small></button>
+        <button class="mode-btn" data-mode="flight" role="radio">3D Flight<small>Fly up, down &amp; around</small></button>
+      </div>
       <p class="best">Best: <span id="start-best">0</span></p>
       <p class="label">Start at level</p>
       <div id="level-picker" class="level-picker" role="radiogroup" aria-label="Start at level"></div>
@@ -91,9 +100,10 @@
       </div>
       <button id="btn-sound" class="toggle-btn" role="switch">Sound: On</button>
       <button id="btn-vibration" class="toggle-btn" role="switch">Vibration: On</button>
-      <button id="btn-reset" class="mid-btn danger">Reset best score</button>
+      <button id="btn-invert" class="toggle-btn" role="switch">3D up/down: Normal</button>
+      <button id="btn-reset" class="mid-btn danger">Reset best scores</button>
       <div id="reset-confirm" class="confirm hidden">
-        <p>Erase your best score?</p>
+        <p>Erase your best scores (both modes)?</p>
         <button id="btn-reset-yes" class="mid-btn danger">Yes, reset</button>
         <button id="btn-reset-no" class="mid-btn">Cancel</button>
       </div>
@@ -105,6 +115,10 @@
   <section id="screen-history" class="screen hidden">
     <div class="panel">
       <h2>History</h2>
+      <div class="choice" role="radiogroup" aria-label="Game mode">
+        <button class="choice-btn" data-hmode="classic" role="radio">Classic</button>
+        <button class="choice-btn" data-hmode="flight" role="radio">3D Flight</button>
+      </div>
       <div class="choice" role="radiogroup" aria-label="Sort">
         <button class="choice-btn" data-order="recent" role="radio">Recent</button>
         <button class="choice-btn" data-order="top" role="radio">Top scores</button>

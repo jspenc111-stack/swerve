@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -62,6 +62,32 @@ export const CONFIG = {
   // ---- Score history ---------------------------------------------------
   historyMax: 100,          // how many past runs to keep on the phone
 
+  // ---- 3D Flight mode -----------------------------------------------------
+  // (Everything else, like boost and steering speed, is shared with Classic.)
+  flightSpeedFactor: 0.9,     // 3D Flight runs at this share of Classic's speed
+  flightShipSpan: 1.2,        // wingspan of the jet
+  flightShipLength: 1.6,
+  flightShipHeight: 0.36,
+  flightHitboxScale: 0.7,     // jet hitbox is smaller than the drawing (fair near-misses)
+  flightMinAltitude: 0.6,     // lowest you can fly
+  flightMaxAltitude: 9,       // highest you can fly (the ceiling)
+  flightStartAltitude: 3,
+  climbAccel: 45,             // how quickly up/down speed builds
+  maxClimbSpeed: 8,           // top up/down speed
+  climbFriction: 7,           // how quickly up/down drifting stops when you let go
+  flightCameraBack: 3.8,      // camera distance behind the jet
+  flightCameraAbove: 1.5,     // camera height above the jet
+  flightCameraFollow: 6,      // how tightly the camera follows climbs and dives
+  flightHorizonRatio: 0.42,
+  flightRollDeg: 40,          // how far the jet banks when turning
+  flightPitchDeg: 16,         // how far the nose tips up/down when climbing/diving
+  flightBandHalfWidth: 22,    // obstacles appear this far to each side
+  flightLaneLeashY: 3,        // the always-open path stays this close to your height
+  minGapHeight: 2.0,          // smallest opening height ever allowed (like minGapWidth)
+  ringBonus: 25,              // points for flying through a ring
+  ringSize: 3.2,              // width/height of a ring's opening
+  joystickRadiusPx: 70,       // drag this far from where you touched = full steering
+
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
   tiltDeadZoneDeg: 2.5,     // small tilts are ignored so the ship doesn't drift
@@ -87,6 +113,14 @@ export const CONFIG = {
 //              between: loose cubes per row between gates (optional, 0)
 //   canyon   — width: corridor width; wallDepth: wall thickness; extra: stray cubes outside
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
+// flight: the obstacles for 3D Flight mode. type is one of:
+//   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size
+//   pillars  — towers rising from the ground. chance: per row; minHeight: shortest tower
+//   frames   — walls with a window to fly through. spacing: distance between walls
+//              (a small spacing makes a tunnel); holeWidth/holeHeight: window size;
+//              extent: how far the wall reaches around the window; depth: thickness
+//   mixed    — segmentLength and sequence, like Classic
+//   ringSpacing (optional): distance between bonus rings (0 = none)
 // palette: sky, skyHorizon, ground, cube, ship, text, and optional grid.
 // effects (optional): glow (true/false), roll { degrees, periodSec },
 //   lightning { minGapSec, maxGapSec }.
@@ -95,6 +129,7 @@ export const LEVELS = [
   {
     name: 'Morning',
     pattern: { type: 'scatter', density: 1.6 },
+    flight: { type: 'floaters', density: 1.6, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
       cube: '#8d939b', ship: '#d9483b', text: '#26303c',
@@ -103,6 +138,13 @@ export const LEVELS = [
   {
     name: 'Sunset',
     pattern: { type: 'scatter', density: 2.6 },
+    flight: {
+      type: 'mixed', segmentLength: 150, ringSpacing: 70,
+      sequence: [
+        { type: 'floaters', density: 2.4, minSize: 1.4, maxSize: 2.8 },
+        { type: 'pillars', chance: 0.8, minHeight: 2 },
+      ],
+    },
     palette: {
       sky: '#ee7b5a', skyHorizon: '#fbd2a2', ground: '#e8cd9c', grid: '#d9ba85',
       cube: '#ea6457', ship: '#283a78', text: '#3a1d17',
@@ -111,6 +153,7 @@ export const LEVELS = [
   {
     name: 'Lagoon',
     pattern: { type: 'clusters', chance: 0.6, min: 3, max: 5 },
+    flight: { type: 'pillars', chance: 0.9, minHeight: 2, ringSpacing: 60 },
     palette: {
       sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
@@ -119,6 +162,7 @@ export const LEVELS = [
   {
     name: 'Gates',
     pattern: { type: 'gates', rowSpacing: 18, gapWidth: 3.2, wingCubes: 4, between: 1 },
+    flight: { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2, ringSpacing: 66 },
     palette: {
       sky: '#c4b1e6', skyHorizon: '#efe7fa', ground: '#f6efdc', grid: '#e6d9bd',
       cube: '#7a49b4', ship: '#e46f35', text: '#2d1e46',
@@ -127,6 +171,7 @@ export const LEVELS = [
   {
     name: 'Night',
     pattern: { type: 'scatter', density: 3.6 },
+    flight: { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
       cube: '#19e2ef', ship: '#ff4fa3', text: '#d8f6ff',
@@ -136,6 +181,7 @@ export const LEVELS = [
   {
     name: 'Canyon',
     pattern: { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.6 },
+    flight: { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4, ringSpacing: 48 },
     palette: {
       sky: '#d5845a', skyHorizon: '#f2c08d', ground: '#a9562f', grid: '#934625',
       cube: '#6b2d1b', ship: '#f6e8c6', text: '#2a1209',
@@ -149,6 +195,14 @@ export const LEVELS = [
         { type: 'scatter', density: 2.8 },
         { type: 'gates', rowSpacing: 16, gapWidth: 3.2, wingCubes: 5, between: 0.8 },
         { type: 'clusters', chance: 0.6, min: 3, max: 6 },
+      ],
+    },
+    flight: {
+      type: 'mixed', segmentLength: 160, ringSpacing: 60,
+      sequence: [
+        { type: 'floaters', density: 2.6, minSize: 1.4, maxSize: 2.6 },
+        { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2 },
+        { type: 'pillars', chance: 0.9, minHeight: 2 },
       ],
     },
     palette: {
@@ -167,6 +221,15 @@ export const LEVELS = [
         { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.8 },
         { type: 'gates', rowSpacing: 15, gapWidth: 3.0, wingCubes: 6, between: 1.2 },
         { type: 'clusters', chance: 0.7, min: 3, max: 6 },
+      ],
+    },
+    flight: {
+      type: 'mixed', segmentLength: 180, ringSpacing: 60,
+      sequence: [
+        { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.8 },
+        { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4 },
+        { type: 'frames', spacing: 20, holeWidth: 3.4, holeHeight: 2.9, extent: 7, depth: 1.2 },
+        { type: 'pillars', chance: 1, minHeight: 3 },
       ],
     },
     palette: {

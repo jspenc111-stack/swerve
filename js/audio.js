@@ -106,3 +106,13 @@ export function vibrate(ms, on) {
     if (navigator.vibrate) navigator.vibrate(ms);
   } catch { /* ignore */ }
 }
+
+// Bright "ding" for flying through a bonus ring (3D Flight).
+export function playRing() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    tone(t, 'sine', 1175, 1175, 0.18, 0.2);
+    tone(t + 0.06, 'sine', 1568, 1568, 0.28, 0.18);
+  } catch { /* ignore */ }
+}

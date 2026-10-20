@@ -68,7 +68,7 @@
 All screens are HTML overlays on top of the canvas. Use large tap targets (at least 48×48 px) and system fonts.
 
 1. **Start screen**
-   - Title "Swerve", best score, a big **Play** button and a ⚙︎ settings button.
+   - Title "Swerve", a **mode switch** (*Classic* / *3D Flight*, remembered), the best score for the selected mode, a big **Play** button and a ⚙︎ settings button.
    - **Level picker**: a grid of all levels (number, name and a small color swatch). Play starts the run at the chosen level, which is remembered. All levels are always available. The menu background shows the chosen level's colors.
    - A short how-to line: "Hold left or right side to steer. Hold Boost to go faster."
    - **History** button (see 6).
@@ -87,14 +87,38 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
    - Controls: *Hold sides* (default) / *Tilt phone* / *Drag*.
    - Sound on/off (default on).
    - Vibration on/off (default on).
+   - 3D up/down: *Normal* (drag/tilt up = climb) or *Inverted* (like a plane's control stick).
    - "Reset best score", with a confirm step.
 6. **History**
    - Every finished run with points: score, level reached (and start level), and date/time ("Today 3:41 PM", "Yesterday …", "Oct 18, …").
+   - A *Classic* / *3D Flight* filter (opens on the selected mode).
    - Two tabs: *Recent* (newest first) and *Top scores* (highest first, numbered). The best score has a ★.
    - Keeps the newest `historyMax` runs (100). "Clear history" with a confirm step (the best score stays).
 7. **Install help**: how to install from Chrome, and how to remove a broken leftover copy when Chrome says "already installed" but the app won't open (Play Store → Manage apps → uninstall; or Settings → Apps → Archived/Disabled). Warns not to use Chrome's "Clear site data", which would also wipe other apps on the same web address.
 
 ---
+
+## 4b. 3D Flight mode
+
+A second way to play, picked on the start screen. Same levels, names, colors, effects, boost and level picker as Classic, but you fly in three dimensions.
+
+- **Movement**: forward speed is `flightSpeedFactor` × Classic's speed (boost works the same). Sideways steering is as in Classic; up/down uses `climbAccel`, `maxClimbSpeed`, `climbFriction`. Height is limited to `flightMinAltitude`…`flightMaxAltitude`; touching the ground or ceiling just stops you (no crash).
+- **Controls**: touch works as a **joystick**: put a thumb anywhere and drag in any direction (a ring shows where). With *Tilt phone* chosen in Settings: tilt sideways to turn, tilt the top toward/away from you to climb/dive. Keyboard: arrows/WASD, Shift boosts. Optional *Inverted* up/down.
+- **Camera**: behind and above the jet (`flightCameraBack`, `flightCameraAbove`); follows sideways exactly and up/down with a slight lag. The jet's shadow on the ground shows how high you are; a height meter sits on the right of the screen.
+- **The jet**: a low-poly fighter (rounded fuselage, swept wings with colored tips, canards, twin angled tail fins, tail planes, glass canopy), metallic silver tinted by the level's ship color with accent parts in that color. Flat-shaded faces lit from above. It rolls into turns (`flightRollDeg`), pitches when climbing/diving (`flightPitchDeg`), has an afterburner (orange, blue-white when boosting) and navigation lights (red left, green right, white strobe).
+- **Obstacles** (`flightSpawner.js`), set per level in `config.js` under `flight`:
+
+  | Type | What it looks like |
+  |---|---|
+  | `floaters` | Floating blocks of different sizes at every height. |
+  | `pillars` | Towers rising from the ground; fly between them or over the short ones. |
+  | `frames` | Walls with a window to fly through. The window moves left/right and up/down from wall to wall. A small `spacing` joins the walls into a **tunnel**. |
+  | `mixed` | Cycles through a sequence, like Classic. |
+
+- **Bonus rings**: glowing gold frames every `ringSpacing`, always placed in the open path. Flying through one adds `ringBonus` points with a chime and a "+25" pop-up. Rings aren't solid.
+- **Fairness** (tested): an open lane at least `minGapWidth` wide and `minGapHeight` tall always exists, bending no more sharply (sideways or up/down) than the jet can follow at full boost. A test sweeps a grid of reachable (sideways, height) positions through generated obstacles for every layout, and checks every ring can be flown through.
+- **Collision**: the jet's hitbox (`flightHitboxScale` of its size) against each block's box, overlapping in all three directions.
+- **Scores**: separate best score/level for 3D Flight; runs are saved in the same history, tagged with their mode.
 
 ## 5. How the 3D look works (rendering)
 
@@ -249,7 +273,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ## 10. Privacy (hard rules)
 
 - **No accounts, no server and no database.** The game runs entirely on the phone.
-- **The only stored data** is the best score, best level, settings (including the chosen start level) and the score history (score, level reached, start level and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
+- **The only stored data** is the best score and best level for each mode, settings (including the chosen start level, game mode and 3D up/down choice) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
 - **Nothing is ever sent anywhere.**
   - No analytics, ads, trackers or crash reporting.
   - No third-party scripts, fonts or CDNs.
