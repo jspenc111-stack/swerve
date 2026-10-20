@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, stepGame, capFrameTime, resetGame } from '../js/game.js';
+import { levelBaseSpeed } from '../js/levels.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 
 const fresh = () => {
@@ -73,4 +74,46 @@ test('hitting a cube ends the run', () => {
   resetGame(g);
   assert.equal(g.crashed, false);
   assert.equal(g.score, 0);
+});
+
+test('a run can start at any level, and the score starts from 0 there', () => {
+  const g = createGame(CONFIG, LEVELS, 5);
+  g.invincible = true;
+  resetGame(g, 9, 3); // start at level 4
+  assert.equal(g.levelIndex, 3);
+  assert.equal(g.info.level.name, LEVELS[3].name);
+  assert.equal(g.score, 0);
+  assert.equal(g.startLevel, 3);
+  assert.ok(Math.abs(g.speed - levelBaseSpeed(g.info, CONFIG)) < 1e-9);
+  for (let i = 0; i < 60; i++) stepGame(g, 1 / 60, 0);
+  assert.ok(g.score > 0 && g.score < 20, `score ${g.score} counts only this run`);
+  assert.equal(g.levelIndex, 3);
+  // Starting again from level 1 works too.
+  resetGame(g, 10, 0);
+  assert.equal(g.levelIndex, 0);
+  assert.equal(g.distance, 0);
+});
+
+test('boost speeds the ship up smoothly, then eases back off', () => {
+  const g = fresh();
+  stepGame(g, 1 / 60, 0, true);
+  assert.ok(g.speed > g.baseSpeed && g.speed < g.baseSpeed * CONFIG.boostMultiplier, 'eases in');
+  for (let i = 0; i < 120; i++) stepGame(g, 1 / 60, 0, true);
+  assert.ok(Math.abs(g.speed - g.baseSpeed * CONFIG.boostMultiplier) < 1e-6, 'full boost');
+  for (let i = 0; i < 120; i++) stepGame(g, 1 / 60, 0, false);
+  assert.ok(Math.abs(g.speed - g.baseSpeed) < 1e-6, 'back to normal');
+});
+
+test('boosting earns points faster (more distance)', () => {
+  const a = fresh();
+  const b = fresh();
+  for (let i = 0; i < 300; i++) { stepGame(a, 1 / 60, 0, false); stepGame(b, 1 / 60, 0, true); }
+  assert.ok(b.score > a.score * 1.3);
+});
+
+test('obstacles are always laid out for full-boost speed', () => {
+  const g = fresh();
+  stepGame(g, 1 / 60, 0, false);
+  const expected = (CONFIG.laneSlopeFactor * CONFIG.maxSteerSpeed) / (g.baseSpeed * CONFIG.boostMultiplier);
+  assert.ok(Math.abs(g.spawner.maxSlope - expected) < 1e-9);
 });

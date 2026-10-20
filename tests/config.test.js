@@ -20,7 +20,9 @@ function checkPattern(p, where) {
       num('min', 1); num('max', p.min); break;
     case 'gates':
       num('rowSpacing', CONFIG.cubeSize * 2);
-      num('gapWidth', CONFIG.minGapWidth); break;
+      num('gapWidth', CONFIG.minGapWidth);
+      if (p.wingCubes !== undefined) num('wingCubes', 2);
+      if (p.between !== undefined) num('between'); break;
     case 'canyon':
       num('width', CONFIG.minGapWidth); num('wallDepth', CONFIG.cubeSize); num('extra'); break;
     case 'mixed':

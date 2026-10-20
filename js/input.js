@@ -19,6 +19,8 @@ export function createInput(target, config) {
     neutral: 0,    // tilt treated as "straight"
     listening: false,
     needsCalibration: false,
+    boostKey: false,   // ↑ or W held (keyboard)
+    boostTouches: 0,   // fingers on the boost button
   };
 
   target.addEventListener('pointerdown', (e) => {
@@ -40,6 +42,7 @@ export function createInput(target, config) {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.left = true;
     else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.right = true;
+    else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.boostKey = true;
     else if (e.key === ' ' || e.key === 'Escape') {
       e.preventDefault();
       if (input.onPause && !e.repeat) input.onPause();
@@ -48,6 +51,7 @@ export function createInput(target, config) {
   window.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.left = false;
     else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.right = false;
+    else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.boostKey = false;
   });
   window.addEventListener('blur', () => clearInput(input));
 
@@ -100,6 +104,36 @@ export function clearInput(input) {
   input.pointers.length = 0;
   input.left = false;
   input.right = false;
+  input.boostKey = false;
+  if (input.clearBoost) input.clearBoost();
+}
+
+// The boost button: hold it to go faster. It keeps its own touches, so you
+// can steer with one thumb and boost with the other.
+export function bindBoostButton(input, el) {
+  input.boostButton = el;
+  const held = new Set();
+  const sync = () => {
+    input.boostTouches = held.size;
+    el.classList.toggle('active', held.size > 0);
+  };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    held.add(e.pointerId);
+    sync();
+  });
+  const end = (e) => { held.delete(e.pointerId); sync(); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('lostpointercapture', end);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  input.clearBoost = () => { held.clear(); sync(); };
+}
+
+export function getBoost(input) {
+  return input.boostKey || input.boostTouches > 0;
 }
 
 export function getSteer(input, viewWidth) {

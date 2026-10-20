@@ -151,10 +151,15 @@ function mixedPart(pattern, z) {
 }
 
 function scatterRow(sp, pattern, z0, playerX) {
-  const cfg = sp.config;
   wander(sp, 0.2);
-  advanceLane(sp, z0 + cfg.spawnStep, playerX);
-  const count = Math.floor(pattern.density) + (sp.random() < pattern.density % 1 ? 1 : 0);
+  advanceLane(sp, z0 + sp.config.spawnStep, playerX);
+  scatterCubes(sp, pattern.density, z0, playerX);
+}
+
+// Randomly placed cubes (about `density` per row), never on the open lane.
+function scatterCubes(sp, density, z0, playerX) {
+  const cfg = sp.config;
+  const count = Math.floor(density) + (sp.random() < density % 1 ? 1 : 0);
   const keepOut = laneClearance(sp, cfg.minGapWidth);
   const band = cfg.spawnBandHalfWidth;
   for (let i = 0; i < count; i++) {
@@ -165,37 +170,42 @@ function scatterRow(sp, pattern, z0, playerX) {
   }
 }
 
-// Small groups of 3–6 touching cubes, with open ground between groups.
-const CELLS = [[0, 0], [1, 0], [0, 1], [-1, 0], [1, 1], [0, -1], [-1, 1], [1, -1], [-1, -1]];
-
+// Islands: small groups of 3–6 separate cubes with a little room between
+// them, and open ground between the groups.
 function clustersRow(sp, pattern, z0, playerX) {
   const cfg = sp.config;
   wander(sp, 0.2);
   advanceLane(sp, z0 + cfg.spawnStep, playerX);
   if (sp.random() >= pattern.chance) return;
   const size = cfg.cubeSize;
+  const half = size / 2;
   const keepOut = laneClearance(sp, cfg.minGapWidth);
   const band = cfg.spawnBandHalfWidth;
-  let cx = playerX + (sp.random() * 2 - 1) * (band - size);
-  const cz = z0 + size * 1.5 + sp.random() * cfg.spawnStep;
-  // Don't let a group sit on the open lane: slide it to one side.
-  const lane = laneAt(sp, cz);
-  const push = keepOut + size * 1.5;
-  if (Math.abs(cx - lane) < push) cx = lane + (cx >= lane ? 1 : -1) * (push + sp.random() * 2);
   const count = pattern.min + Math.floor(sp.random() * (pattern.max - pattern.min + 1));
-  // Pick `count` neighbouring cells around the group's centre.
-  const start = Math.floor(sp.random() * 4);
-  for (let i = 0; i < Math.min(count, CELLS.length); i++) {
-    const cell = CELLS[(i === 0 ? 0 : 1 + ((i - 1 + start) % (CELLS.length - 1)))];
-    const x = cx + cell[0] * size;
-    const z = cz + cell[1] * size;
-    if (Math.abs(x - laneAt(sp, z)) < keepOut) continue;
-    addCube(sp, x, z);
+  const withCentre = count >= 5;
+  const ring = withCentre ? count - 1 : count;
+  // With a centre cube the ring sits further out so no two cubes touch.
+  const radius = size * (withCentre ? 1.6 + 0.25 * sp.random() : 1.15 + 0.3 * sp.random());
+  let cx = playerX + (sp.random() * 2 - 1) * (band - radius);
+  const cz = z0 + radius + half + sp.random() * cfg.spawnStep;
+  // Don't let an island sit on the open lane: slide it to one side.
+  const lane = laneAt(sp, cz);
+  const push = keepOut + radius;
+  if (Math.abs(cx - lane) < push) cx = lane + (cx >= lane ? 1 : -1) * (push + sp.random() * 2);
+  const place = (x, z) => {
+    if (Math.abs(x - laneAt(sp, z)) >= keepOut) addCube(sp, x, z);
+  };
+  if (withCentre) place(cx, cz);
+  const turn = sp.random() * Math.PI * 2;
+  for (let i = 0; i < ring; i++) {
+    const a = turn + (i * Math.PI * 2) / ring + (sp.random() - 0.5) * 0.3;
+    place(cx + Math.cos(a) * radius, cz + Math.sin(a) * radius);
   }
 }
 
-// Rows of cubes across the field, each with one gap. The gap swings left and
-// right from row to row, so you weave through like a slalom.
+// Slalom gates: a short fence of spaced posts on each side of an opening.
+// The opening swings left and right from gate to gate, so you weave through.
+// The fences are too long to go around in the time between gates.
 function gatesRow(sp, pattern, z0, playerX) {
   const cfg = sp.config;
   const z1 = z0 + cfg.spawnStep;
@@ -206,20 +216,23 @@ function gatesRow(sp, pattern, z0, playerX) {
     sp.laneTarget = sp.gateFlip * sp.maxSlope * (0.6 + 0.4 * sp.random());
   }
   advanceLane(sp, z1, playerX);
-  if (!hasRow) return;
-  const half = cfg.cubeSize / 2;
-  const z = rowZ + half;
-  const gap = Math.max(pattern.gapWidth, cfg.minGapWidth + 2 * sp.maxSlope * half + 0.3);
-  const centre = laneAt(sp, z);
-  const band = cfg.spawnBandHalfWidth;
-  for (let side = -1; side <= 1; side += 2) {
-    for (let k = 0; ; k++) {
-      const x = centre + side * (gap / 2 + half + k * cfg.cubeSize);
-      if (Math.abs(x - centre) > band) break; // rows are centred on the gap
-      addCube(sp, x, z);
+  if (hasRow) {
+    const size = cfg.cubeSize;
+    const half = size / 2;
+    const z = rowZ + half;
+    const gap = Math.max(pattern.gapWidth, cfg.minGapWidth + 2 * sp.maxSlope * half + 0.3);
+    const centre = laneAt(sp, z);
+    const posts = pattern.wingCubes || 5;
+    // Posts sit slightly apart (too close for the ship to squeeze between).
+    const pitch = size + GATE_POST_GAP;
+    for (let side = -1; side <= 1; side += 2) {
+      for (let k = 0; k < posts; k++) addCube(sp, centre + side * (gap / 2 + half + k * pitch), z);
     }
   }
+  // A few loose cubes between the gates.
+  if (pattern.between > 0) scatterCubes(sp, pattern.between, z0, playerX);
 }
+const GATE_POST_GAP = 0.35;
 
 // Two thick walls forming a winding corridor that follows the open lane.
 function canyonRow(sp, pattern, z0, playerX) {

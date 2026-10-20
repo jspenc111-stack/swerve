@@ -76,7 +76,7 @@ button {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 22px;
-  padding: 28px 22px 24px;
+  padding: 24px 18px 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -249,3 +249,118 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 }
 .debug .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .debug .on { background: #2e7d32; }
+
+/* ---- Level picker (start screen) ---- */
+.level-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.level-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 2px 6px;
+  min-height: 64px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2px solid transparent;
+  font-size: 11px;
+  line-height: 1.1;
+}
+.level-chip[aria-checked="true"] { border-color: var(--accent); background: rgba(255, 90, 78, 0.18); }
+.level-chip .swatch {
+  position: relative;
+  width: 100%;
+  max-width: 64px;
+  height: 26px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.level-chip .swatch-cube {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -20%);
+  border-radius: 1px;
+}
+.level-chip .num { font-weight: 800; font-size: 13px; }
+.level-chip .name { color: var(--muted); }
+
+.row-btns { display: flex; gap: 8px; }
+.row-btns > button { flex: 1; }
+
+.link-btn {
+  background: none;
+  color: var(--muted);
+  text-decoration: underline;
+  font-size: 14px;
+  min-height: 40px;
+}
+
+/* ---- Boost button (bottom centre while playing) ---- */
+.boost-btn {
+  position: absolute;
+  left: 50%;
+  bottom: calc(22px + var(--safe-bottom));
+  transform: translateX(-50%);
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: rgba(20, 26, 42, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.boost-btn.active {
+  transform: translateX(-50%) scale(0.94);
+  background: rgba(255, 90, 78, 0.85);
+  border-color: #fff;
+  box-shadow: 0 0 22px rgba(255, 160, 120, 0.8);
+}
+
+/* ---- History ---- */
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  text-align: left;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.history-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "score when" "level level";
+  gap: 2px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.history-list li:last-child { border-bottom: none; }
+.h-score { grid-area: score; font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
+.h-when { grid-area: when; text-align: right; color: var(--muted); font-size: 13px; align-self: center; }
+.h-level { grid-area: level; color: var(--muted); font-size: 13px; }
+
+/* ---- Install help ---- */
+.help { text-align: left; }
+.help h2 { text-align: center; }
+.help p, .help ol { margin: 0; font-size: 15px; line-height: 1.45; }
+.help ol { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.help .warn { color: #ffcf9f; font-size: 14px; }

@@ -30,7 +30,7 @@ Swerve is a personal one-player arcade game: steer an arrow across a field and d
   - No external scripts, fonts or CDNs.
   - No network requests beyond the app's own files.
 - Keep the Content Security Policy in `index.html` intact.
-- The only stored data is the `swerve:v1` key in localStorage (best score, best level, settings). Don't add more without the owner's say-so.
+- The only stored data is the `swerve:v1` key in localStorage (best score, best level, settings, score history). Don't add more without the owner's say-so.
 - The repo is **public**. Never commit personal information (names, emails, locations, anything about the owner).
 - Every obstacle pattern must always leave a passable gap (`minGapWidth`), and the fairness tests must cover it.
 - Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner or other existing games.

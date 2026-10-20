@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpawner, updateSpawner } from '../js/spawner.js';
+import { createGame, resetGame, stepGame } from '../js/game.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 import { levelForDistance, levelBaseSpeed } from '../js/levels.js';
 
@@ -21,12 +22,13 @@ const PATTERNS = {
   'scatter (very dense)': { type: 'scatter', density: 8 },
   clusters: { type: 'clusters', chance: 1, min: 3, max: 6 },
   gates: { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth },
+  'gates (long fences, busy)': { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth, wingCubes: 9, between: 3 },
   canyon: { type: 'canyon', width: CONFIG.minGapWidth, wallDepth: 6, extra: 2 },
   mixed: {
     type: 'mixed', segmentLength: 60,
     sequence: [
       { type: 'scatter', density: 5 },
-      { type: 'gates', rowSpacing: 12, gapWidth: 3 },
+      { type: 'gates', rowSpacing: 12, gapWidth: 3, wingCubes: 5, between: 1 },
       { type: 'canyon', width: 5, wallDepth: 6, extra: 1 },
       { type: 'clusters', chance: 0.9, min: 3, max: 6 },
     ],
@@ -185,4 +187,65 @@ test('the open lane follows a player who moves sideways', () => {
   // Every cube is near the player's side band, and the lane kept up.
   assert.ok(Math.abs(sp.laneX - px) < CONFIG.laneLeash + 2, `lane ${sp.laneX} vs player ${px}`);
   for (const c of sp.cubes) assert.ok(Math.abs(c.x - px) < CONFIG.spawnBandHalfWidth + 20);
+});
+
+test('fairness: real play with boost switched on and off, starting from every level', () => {
+  for (let start = 0; start < LEVELS.length; start++) {
+    const game = createGame(CONFIG, LEVELS, 100 + start);
+    game.invincible = true;
+    resetGame(game, 200 + start, start);
+    const all = [];
+    let tooClose = 0;
+    let maxSpeed = 0;
+    let boosting = false;
+    const end = game.distance + (CONFIG.levelLength / CONFIG.scorePerUnit) * 1.5;
+    for (let i = 0; game.distance < end; i++) {
+      if (i % 90 === 0) boosting = !boosting; // toggle every 1.5 s
+      stepGame(game, 1 / FPS, 0, boosting);
+      maxSpeed = Math.max(maxSpeed, game.speed);
+      const sp = game.spawner;
+      for (let k = sp.cubes.length - sp.lastSpawned; k < sp.cubes.length; k++) {
+        const c = sp.cubes[k];
+        if (c.z < game.distance + CONFIG.fogDistance) tooClose++;
+        all.push({ x: c.x, z: c.z, size: c.size });
+      }
+    }
+    all.sort((a, b) => a.z - b.z);
+    // Shift so the check starts where this run's obstacles begin.
+    const offset = game.startDistance;
+    const run = { cubes: all.map((c) => ({ ...c, z: c.z - offset })), endZ: game.distance - offset, tooClose, maxSpeed };
+    assert.equal(run.tooClose, 0);
+    const result = checkPassable(run);
+    assert.ok(result.ok, `start level ${start + 1}: blocked at z=${result.z?.toFixed(1)} (${result.why})`);
+  }
+});
+
+test('islands are separate cubes, not clumps', () => {
+  const run = generate(singleLevel(PATTERNS.clusters), 42, () => CONFIG.baseSpeed);
+  const s = CONFIG.cubeSize;
+  let touching = 0;
+  for (let i = 0; i < run.cubes.length; i++) {
+    for (let j = i + 1; j < run.cubes.length && run.cubes[j].z - run.cubes[i].z < s + 0.1; j++) {
+      if (Math.abs(run.cubes[j].x - run.cubes[i].x) < s + 0.1) touching++;
+    }
+  }
+  assert.ok(touching / run.cubes.length < 0.1, `${touching} touching pairs among ${run.cubes.length} cubes`);
+});
+
+test('gates are fences of spaced posts with one opening, not walls across the field', () => {
+  const run = generate(singleLevel({ type: 'gates', rowSpacing: 16, gapWidth: 3.2, wingCubes: 5 }), 7, () => CONFIG.baseSpeed);
+  const rows = new Map();
+  for (const c of run.cubes) {
+    const key = c.z.toFixed(2);
+    if (!rows.has(key)) rows.set(key, []);
+    rows.get(key).push(c.x);
+  }
+  for (const xs of rows.values()) {
+    assert.equal(xs.length, 10, 'five posts on each side');
+    xs.sort((a, b) => a - b);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i] - CONFIG.cubeSize);
+    const opening = Math.max(...gaps);
+    assert.ok(opening >= 3.2 - 1e-6, 'one real opening');
+    for (const g of gaps) if (g !== opening) assert.ok(g > 0.2 && g < CONFIG.shipWidth * CONFIG.hitboxScale, 'posts are spaced but too close to squeeze through');
+  }
 });
