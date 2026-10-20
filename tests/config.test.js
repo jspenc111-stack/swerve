@@ -63,6 +63,44 @@ test('every level has all required fields', () => {
   });
 });
 
+const FLIGHT = ['floaters', 'pillars', 'frames', 'mixed'];
+function checkFlight(p, where) {
+  assert.ok(p && typeof p === 'object', `${where}: flight pattern missing`);
+  assert.ok(FLIGHT.includes(p.type), `${where}: unknown flight pattern "${p.type}"`);
+  const num = (k, min = 0) => {
+    assert.equal(typeof p[k], 'number', `${where}: ${k} must be a number`);
+    assert.ok(p[k] >= min, `${where}: ${k} too small`);
+  };
+  if (p.ringSpacing !== undefined) num('ringSpacing');
+  switch (p.type) {
+    case 'floaters': num('density'); num('minSize', 0.5); num('maxSize', p.minSize); break;
+    case 'pillars': num('chance'); assert.ok(p.chance <= 1); num('minHeight', 0.5); break;
+    case 'frames':
+      num('spacing', 1); num('holeWidth', CONFIG.minGapWidth); num('holeHeight', CONFIG.minGapHeight);
+      num('extent', 1); num('depth', 0.5);
+      assert.ok(p.depth <= CONFIG.spawnStep, `${where}: depth must fit in one spawn step`);
+      break;
+    case 'mixed':
+      num('segmentLength', CONFIG.spawnStep);
+      assert.ok(Array.isArray(p.sequence) && p.sequence.length > 0);
+      p.sequence.forEach((q, i) => {
+        assert.notEqual(q.type, 'mixed');
+        checkFlight(q, `${where} sequence[${i}]`);
+      });
+      break;
+  }
+}
+
+test('every level has a valid 3D Flight layout', () => {
+  LEVELS.forEach((level, i) => checkFlight(level.flight, `level ${i + 1}`));
+  assert.ok(CONFIG.flightMinAltitude < CONFIG.flightStartAltitude);
+  assert.ok(CONFIG.flightStartAltitude < CONFIG.flightMaxAltitude);
+  assert.ok(CONFIG.flightMaxAltitude - CONFIG.flightMinAltitude > CONFIG.minGapHeight * 2);
+  assert.ok(CONFIG.minGapHeight >= CONFIG.flightShipHeight * 2.5);
+  assert.ok(CONFIG.flightHitboxScale > 0 && CONFIG.flightHitboxScale <= 1);
+  assert.ok(CONFIG.ringSize >= CONFIG.minGapWidth);
+});
+
 test('all colors are valid', () => {
   LEVELS.forEach((level, i) => {
     for (const [key, value] of Object.entries(level.palette)) {

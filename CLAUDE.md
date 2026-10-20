@@ -19,8 +19,9 @@ Swerve is a personal one-player arcade game: steer an arrow across a field and d
 
 ## Where changes go
 - **Tuning requests** go in `js/config.js` only, whenever possible. Examples: faster/slower, easier/harder, new colors, a new level, a different level order.
-- New obstacle patterns go in `js/spawner.js`, with a fairness test.
-- Keep game logic (`game.js`, `levels.js`, `spawner.js`, `collision.js`) free of DOM and canvas code, so it stays testable in Node.
+- New obstacle patterns go in `js/spawner.js` (Classic) or `js/flightSpawner.js` (3D Flight), with a fairness test.
+- Keep game logic (`game.js`, `flight.js`, `levels.js`, `spawner.js`, `flightSpawner.js`, `collision.js`) free of DOM and canvas code, so it stays testable in Node.
+- Drawing: Classic in `render.js`, 3D Flight in `render3d.js`. `main.js` runs both modes.
 
 ## Hard rules
 - Plain HTML, CSS and JS only: no frameworks, no build step, no npm runtime dependencies.
@@ -30,7 +31,7 @@ Swerve is a personal one-player arcade game: steer an arrow across a field and d
   - No external scripts, fonts or CDNs.
   - No network requests beyond the app's own files.
 - Keep the Content Security Policy in `index.html` intact.
-- The only stored data is the `swerve:v1` key in localStorage (best score, best level, settings, score history). Don't add more without the owner's say-so.
+- The only stored data is the `swerve:v1` key in localStorage (best score and level per mode, settings, score history). Don't add more without the owner's say-so.
 - The repo is **public**. Never commit personal information (names, emails, locations, anything about the owner).
 - Every obstacle pattern must always leave a passable gap (`minGapWidth`), and the fairness tests must cover it.
 - Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner or other existing games.

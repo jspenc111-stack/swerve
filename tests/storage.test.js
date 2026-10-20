@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
+  bestScoreOf, runsIn,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -81,8 +82,8 @@ test('history records runs newest first, with score, level, start level and time
   recordRun(s, 800, 5, 3, 2000);
   recordRun(s, 0, 1, 1, 3000); // a zero-point run isn't worth keeping
   assert.equal(s.history.length, 2);
-  assert.deepEqual(s.history[0], { score: 800, level: 5, startLevel: 3, at: 2000 });
-  assert.deepEqual(s.history[1], { score: 300, level: 2, startLevel: 1, at: 1000 });
+  assert.deepEqual(s.history[0], { score: 800, level: 5, startLevel: 3, at: 2000, mode: 'classic' });
+  assert.deepEqual(s.history[1], { score: 300, level: 2, startLevel: 1, at: 1000, mode: 'classic' });
   assert.equal(s.bestScore, 800);
   assert.equal(s.bestLevel, 5);
 });
@@ -102,7 +103,7 @@ test('history round-trips, and bad entries are dropped without losing good ones'
   s.settings.startLevel = 4;
   writeSave(s, store);
   const back = loadSave(store);
-  assert.deepEqual(back.history, [{ score: 450, level: 3, startLevel: 1, at: 5000 }]);
+  assert.deepEqual(back.history, [{ score: 450, level: 3, startLevel: 1, at: 5000, mode: 'classic' }]);
   assert.equal(back.settings.startLevel, 4);
 
   const raw = JSON.stringify({
@@ -120,8 +121,8 @@ test('history round-trips, and bad entries are dropped without losing good ones'
   const loaded = loadSave(memoryStorage({ 'swerve:v1': raw }));
   assert.equal(loaded.settings.startLevel, 1);
   assert.deepEqual(loaded.history, [
-    { score: 90, level: 3, startLevel: 1, at: 300 },
-    { score: 50, level: 2, startLevel: 2, at: 200 },
+    { score: 90, level: 3, startLevel: 1, at: 300, mode: 'classic' },
+    { score: 50, level: 2, startLevel: 2, at: 200, mode: 'classic' },
   ]);
   const notList = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ history: { a: 1 } }) }));
   assert.deepEqual(notList.history, []);
@@ -140,4 +141,35 @@ test('top scores, rank and clearing the history', () => {
   clearHistory(s);
   assert.equal(s.history.length, 0);
   assert.equal(s.bestScore, 900, 'clearing history keeps the best score');
+});
+
+test('each game mode keeps its own best score, and history remembers the mode', () => {
+  const store = memoryStorage();
+  const s = defaultSave();
+  assert.equal(recordRun(s, 500, 3, 1, 10, 100, 'classic'), true);
+  assert.equal(recordRun(s, 200, 2, 1, 20, 100, 'flight'), true, 'first 3D run is a 3D best');
+  assert.equal(recordRun(s, 300, 4, 1, 30, 100, 'flight'), true);
+  assert.equal(recordRun(s, 250, 2, 1, 40, 100, 'flight'), false);
+  assert.equal(bestScoreOf(s, 'classic'), 500);
+  assert.equal(bestScoreOf(s, 'flight'), 300);
+  assert.equal(s.bestLevel, 3);
+  assert.equal(s.flightBestLevel, 4);
+  assert.equal(rankOf(s, 250, 'flight'), 2);
+  assert.equal(rankOf(s, 250, 'classic'), 2);
+  assert.equal(runsIn(s, 'flight'), 3);
+  assert.deepEqual(sortedHistory(s, 'top', 'flight').map((r) => r.score), [300, 250, 200]);
+  assert.equal(sortedHistory(s, 'recent').length, 4);
+  s.settings.mode = 'flight';
+  s.settings.invertY = true;
+  writeSave(s, store);
+  const back = loadSave(store);
+  assert.equal(back.flightBestScore, 300);
+  assert.equal(back.settings.mode, 'flight');
+  assert.equal(back.settings.invertY, true);
+  assert.equal(back.history[0].mode, 'flight');
+  // Bad values fall back to defaults.
+  const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { mode: 'space', invertY: 'yes' }, flightBestScore: -4 }) }));
+  assert.equal(bad.settings.mode, 'classic');
+  assert.equal(bad.settings.invertY, false);
+  assert.equal(bad.flightBestScore, 0);
 });

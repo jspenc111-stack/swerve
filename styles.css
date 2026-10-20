@@ -364,3 +364,76 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 .help p, .help ol { margin: 0; font-size: 15px; line-height: 1.45; }
 .help ol { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .help .warn { color: #ffcf9f; font-size: 14px; }
+
+/* ---- Game mode switch (start screen) ---- */
+.mode-switch { display: flex; gap: 8px; }
+.mode-btn {
+  flex: 1;
+  min-height: 60px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  font-size: 17px;
+  font-weight: 800;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.mode-btn small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.mode-btn[aria-checked="true"] { border-color: var(--accent); background: rgba(255, 90, 78, 0.2); }
+
+/* ---- 3D Flight HUD: height meter and ring pop-up ---- */
+.altimeter {
+  position: absolute;
+  right: calc(14px + var(--safe-right));
+  top: 32%;
+  height: 34%;
+  width: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.alt-track {
+  position: relative;
+  flex: 1;
+  width: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.alt-marker {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+}
+.alt-label { font-size: 10px; font-weight: 800; opacity: 0.7; }
+
+.toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 17%;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 800;
+  color: #ffd166;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+}
+.toast.show { animation: toast-up 0.9s ease-out both; }
+@keyframes toast-up {
+  0% { opacity: 0; transform: translateY(10px) scale(0.8); }
+  20% { opacity: 1; transform: translateY(0) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-24px) scale(1); }
+}
+

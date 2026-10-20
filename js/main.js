@@ -1,19 +1,24 @@
 // main.js — boots the app, runs the game loop and switches screens.
-// (Game rules live in game.js; drawing lives in render.js.)
+// Two game modes share the menus, levels, colors and effects:
+//   Classic   — rules in game.js, drawing in render.js
+//   3D Flight — rules in flight.js, drawing in render3d.js
 
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
 import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
+import { createFlight, resetFlight, stepFlight, jumpFlightToLevel } from './flight.js';
+import { createFlightRenderer, drawFlightFrame } from './render3d.js';
 import { blendPalette, copyPalette, bannerText, hudLabel } from './levels.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
-  createInput, getSteer, getBoost, bindBoostButton, clearInput, setControlMode, calibrateTilt,
-  requestTiltPermission,
+  createInput, getSteer, getFlightSteer, getBoost, bindBoostButton, clearInput, setControlMode,
+  calibrateTilt, requestTiltPermission,
 } from './input.js';
 import {
   loadSave, writeSave, recordRun, defaultSave, rankOf, sortedHistory, clearHistory,
+  bestScoreOf, runsIn,
 } from './storage.js';
 import {
-  unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, vibrate,
+  unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
 } from './audio.js';
 
 const DEG = Math.PI / 180;
@@ -22,8 +27,17 @@ const canvas = $('game');
 const renderer = createRenderer(canvas, CONFIG);
 const input = createInput(canvas, CONFIG);
 const game = createGame(CONFIG, LEVELS, (Date.now() >>> 0) || 1);
+const flight = createFlight(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x5bd1e995) || 2);
+const flightRenderer = createFlightRenderer();
+const flightSteer = { x: 0, y: 0, joystick: null };
 const save = loadSave(undefined, CONFIG.historyMax);
 bindBoostButton(input, $('btn-boost'));
+
+// Which game mode is selected: 'classic' or 'flight' (3D).
+let gameMode = save.settings.mode;
+function cur() {
+  return gameMode === 'flight' ? flight : game;
+}
 
 const screens = {
   start: $('screen-start'),
@@ -56,6 +70,8 @@ const view = {
   palette: shownPalette,
   bank: 0, roll: 0, shakeX: 0, shakeY: 0, flash: 0, glow: 0, lean: 0, yaw: 0,
   showShip: true, hitboxes: false,
+  camY: CONFIG.flightStartAltitude + CONFIG.flightCameraAbove, // 3D camera height
+  joystick: { active: false, x0: 0, y0: 0, x: 0, y: 0 },
 };
 
 function effectsOf(level) {
@@ -69,20 +85,20 @@ function startLevelFade(snap) {
   rollFrom = rollAmp;
   fadeT = snap ? 1 : 0;
   if (snap) {
-    copyPalette(game.info.level.palette, shownPalette);
-    view.glow = effectsOf(game.info.level).glow ? 1 : 0;
+    copyPalette(cur().info.level.palette, shownPalette);
+    view.glow = effectsOf(cur().info.level).glow ? 1 : 0;
     rollAmp = targetRoll();
   }
   nextStrike = 0;
 }
 
 function targetRoll() {
-  const roll = effectsOf(game.info.level).roll;
+  const roll = effectsOf(cur().info.level).roll;
   return roll ? roll.degrees * DEG : 0;
 }
 
 function updateColors(dt) {
-  const level = game.info.level;
+  const level = cur().info.level;
   const glowTarget = effectsOf(level).glow ? 1 : 0;
   if (fadeT < 1) {
     fadeT = Math.min(1, fadeT + dt / CONFIG.paletteFadeSec);
@@ -102,14 +118,14 @@ function updateColors(dt) {
 
 // Tilt level: the whole view slowly rolls back and forth.
 function updateRoll() {
-  const roll = effectsOf(game.info.level).roll;
+  const roll = effectsOf(cur().info.level).roll;
   const period = roll ? roll.periodSec : 7;
-  view.roll = rollAmp * Math.sin((game.time * 2 * Math.PI) / period);
+  view.roll = rollAmp * Math.sin((cur().time * 2 * Math.PI) / period);
 }
 
 // Storm level: occasional brief lightning flashes.
 function updateLightning(now) {
-  const storm = effectsOf(game.info.level).lightning;
+  const storm = effectsOf(cur().info.level).lightning;
   if (!storm || mode !== 'playing') {
     strikeStart = -1;
     return 0;
@@ -134,7 +150,7 @@ function randomBetween(a, b) {
 
 // Tilt the view toward the turn, easing in and out.
 function updateBank(dt) {
-  const target = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.bankMaxDeg * DEG;
+  const target = (cur().vx / CONFIG.maxSteerSpeed) * CONFIG.bankMaxDeg * DEG;
   view.bank += (target - view.bank) * (1 - Math.exp(-CONFIG.bankEase * dt));
 }
 
@@ -142,7 +158,7 @@ function updateBank(dt) {
 
 function showBanner(now) {
   const el = $('banner');
-  el.textContent = bannerText(game.info);
+  el.textContent = bannerText(cur().info);
   el.classList.add('show');
   bannerUntil = now + CONFIG.bannerSec * 1000;
 }
@@ -156,15 +172,29 @@ let lastScoreShown = -1;
 let lastLabel = '';
 let lastLevelShown = -1;
 function updateHud() {
-  if (game.score !== lastScoreShown) {
-    lastScoreShown = game.score;
-    $('hud-score').textContent = game.score;
+  const g = cur();
+  if (g.score !== lastScoreShown) {
+    lastScoreShown = g.score;
+    $('hud-score').textContent = g.score;
   }
-  if (game.levelIndex !== lastLevelShown || lastLabel === '') {
-    lastLevelShown = game.levelIndex;
-    lastLabel = hudLabel(game.info);
+  if (g.levelIndex !== lastLevelShown || lastLabel === '') {
+    lastLevelShown = g.levelIndex;
+    lastLabel = hudLabel(g.info);
     $('hud-level').textContent = lastLabel;
   }
+  if (gameMode === 'flight') {
+    // Height meter: marker near the top when flying high.
+    const t = (flight.y - CONFIG.flightMinAltitude) / (CONFIG.flightMaxAltitude - CONFIG.flightMinAltitude);
+    $('alt-marker').style.top = `${((1 - t) * 100).toFixed(1)}%`;
+  }
+}
+
+function showToast(text) {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.remove('show');
+  void el.offsetWidth; // restart the animation
+  el.classList.add('show');
 }
 
 // ---- Screens -------------------------------------------------------------------
@@ -175,8 +205,8 @@ function showScreen(name) {
 }
 
 function updateBestDisplays() {
-  $('start-best').textContent = save.bestScore;
-  $('over-best').textContent = save.bestScore;
+  $('start-best').textContent = bestScoreOf(save, gameMode);
+  $('over-best').textContent = bestScoreOf(save, gameMode);
 }
 
 const HOWTO = {
@@ -184,6 +214,46 @@ const HOWTO = {
   tilt: 'Tilt your phone to steer. Hold Boost to go faster.',
   drag: 'Drag left or right to steer. Hold Boost to go faster.',
 };
+const HOWTO_FLIGHT = {
+  touch: 'Drag anywhere to fly: left, right, up and down. Fly through rings for bonus points.',
+  tilt: 'Tilt to fly: sideways to turn, toward/away from you to climb/dive. Rings give bonus points.',
+};
+function howto() {
+  if (gameMode === 'flight') return save.settings.controls === 'tilt' ? HOWTO_FLIGHT.tilt : HOWTO_FLIGHT.touch;
+  return HOWTO[save.settings.controls];
+}
+
+// Start a fresh run (or menu preview) in the selected mode at the chosen level.
+function resetCurrent() {
+  if (gameMode === 'flight') {
+    resetFlight(flight, undefined, startLevelIndex());
+    view.camY = flight.y + CONFIG.flightCameraAbove;
+  } else {
+    resetGame(game, undefined, startLevelIndex());
+  }
+}
+
+// ---- Game mode switch (start screen) ---------------------------------------------
+
+function renderModeSwitch() {
+  for (const b of document.querySelectorAll('[data-mode]')) {
+    b.setAttribute('aria-checked', String(b.dataset.mode === gameMode));
+  }
+  $('altimeter').classList.toggle('hidden', gameMode !== 'flight');
+  $('start-howto').textContent = howto();
+}
+
+function setGameMode(m) {
+  if (m === gameMode) return;
+  gameMode = m;
+  save.settings.mode = m;
+  writeSave(save);
+  resetCurrent();
+  startLevelFade(true);
+  lastLabel = '';
+  renderModeSwitch();
+  updateBestDisplays();
+}
 
 // The chosen starting level (0-based), kept within the level list.
 function startLevelIndex() {
@@ -193,7 +263,7 @@ function startLevelIndex() {
 function startRun() {
   unlockAudio();
   if (save.settings.controls === 'tilt') requestTiltPermission();
-  resetGame(game, undefined, startLevelIndex());
+  resetCurrent();
   clearInput(input);
   calibrateTilt(input);
   lastScoreShown = -1;
@@ -232,13 +302,13 @@ function toMenu() {
     return;
   }
   mode = 'menu';
-  resetGame(game, undefined, startLevelIndex());
+  resetCurrent();
   startLevelFade(true);
   renderPicker();
   view.bank = 0;
   hideBanner();
   updateBestDisplays();
-  $('start-howto').textContent = HOWTO[save.settings.controls];
+  renderModeSwitch();
   showScreen('start');
   keepAwake(false);
 }
@@ -252,18 +322,21 @@ function crash(now) {
 
 function showGameOver() {
   mode = 'over';
-  const levelNumber = game.levelIndex + 1;
-  const startNumber = game.startLevel + 1;
-  const newBest = recordRun(save, game.score, levelNumber, startNumber, Date.now(), CONFIG.historyMax);
+  const g = cur();
+  const levelNumber = g.levelIndex + 1;
+  const startNumber = g.startLevel + 1;
+  const newBest = recordRun(save, g.score, levelNumber, startNumber, Date.now(), CONFIG.historyMax, gameMode);
   writeSave(save);
-  $('over-score').textContent = game.score;
-  $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(game.info)}` +
-    (startNumber > 1 ? ` (started at ${startNumber})` : '');
-  // "Your #3 score" for a good run that isn't a new best.
-  const rank = rankOf(save, game.score);
+  $('over-score').textContent = g.score;
+  $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(g.info)}` +
+    (startNumber > 1 ? ` (started at ${startNumber})` : '') +
+    (gameMode === 'flight' && flight.rings > 0 ? ` · ${flight.rings} ring${flight.rings === 1 ? '' : 's'}` : '');
+  // "Your #3 score" for a good run that isn't a new best (within this mode).
+  const rank = rankOf(save, g.score, gameMode);
+  const runs = runsIn(save, gameMode);
   const rankEl = $('over-rank');
-  rankEl.classList.toggle('hidden', newBest || game.score === 0 || rank > 10 || save.history.length < 3);
-  rankEl.textContent = `Your #${rank} score out of ${save.history.length} runs`;
+  rankEl.classList.toggle('hidden', newBest || g.score === 0 || rank > 10 || runs < 3);
+  rankEl.textContent = `Your #${rank} ${gameMode === 'flight' ? '3D ' : ''}score out of ${runs} runs`;
   const nb = $('over-newbest');
   nb.classList.add('hidden');
   if (newBest) {
@@ -294,12 +367,14 @@ function renderSettings() {
   $('btn-sound').setAttribute('aria-checked', String(save.settings.sound));
   $('btn-vibration').textContent = `Vibration: ${save.settings.vibration ? 'On' : 'Off'}`;
   $('btn-vibration').setAttribute('aria-checked', String(save.settings.vibration));
+  $('btn-invert').textContent = `3D up/down: ${save.settings.invertY ? 'Inverted (like a plane)' : 'Normal'}`;
+  $('btn-invert').setAttribute('aria-checked', String(save.settings.invertY));
 }
 
 function applySettings() {
   setSoundEnabled(save.settings.sound);
   setControlMode(input, save.settings.controls);
-  $('start-howto').textContent = HOWTO[save.settings.controls];
+  $('start-howto').textContent = howto();
 }
 
 function changeSetting(fn) {
@@ -351,7 +426,7 @@ function pickLevel(n) {
   renderPicker();
   if (mode === 'menu') {
     // Show the chosen level's colors behind the menu.
-    resetGame(game, undefined, startLevelIndex());
+    resetCurrent();
     startLevelFade(false);
   }
 }
@@ -359,9 +434,11 @@ function pickLevel(n) {
 // ---- Score history --------------------------------------------------------------
 
 let historyOrder = 'recent';
+let historyMode = 'classic';
 
 function openHistory() {
   mode = 'history';
+  historyMode = gameMode;
   $('history-confirm').classList.add('hidden');
   renderHistory();
   showScreen('history');
@@ -371,9 +448,12 @@ function renderHistory() {
   for (const b of document.querySelectorAll('[data-order]')) {
     b.setAttribute('aria-checked', String(b.dataset.order === historyOrder));
   }
+  for (const b of document.querySelectorAll('[data-hmode]')) {
+    b.setAttribute('aria-checked', String(b.dataset.hmode === historyMode));
+  }
   const list = $('history-list');
   list.textContent = '';
-  const runs = sortedHistory(save, historyOrder);
+  const runs = sortedHistory(save, historyOrder, historyMode);
   $('history-empty').classList.toggle('hidden', runs.length > 0);
   $('btn-history-clear').classList.toggle('hidden', runs.length === 0);
   const best = runs.reduce((m, r) => Math.max(m, r.score), 0);
@@ -477,12 +557,30 @@ function frame(now) {
   view.shakeX = 0;
   view.shakeY = 0;
 
+  view.joystick.active = false;
   if (mode === 'playing') {
-    const events = stepGame(game, dt, getSteer(input, renderer.w), getBoost(input));
+    let events;
+    if (gameMode === 'flight') {
+      getFlightSteer(input, flightSteer, save.settings.invertY);
+      events = stepFlight(flight, dt, flightSteer.x, flightSteer.y, getBoost(input, true));
+      const p = flightSteer.joystick;
+      if (p) {
+        view.joystick.active = true;
+        view.joystick.x0 = p.startX;
+        view.joystick.y0 = p.startY;
+        view.joystick.x = p.x;
+        view.joystick.y = p.y;
+      }
+    } else {
+      events = stepGame(game, dt, getSteer(input, renderer.w), getBoost(input));
+    }
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (e.type === 'crash') crash(now);
-      else if (e.type === 'level') {
+      else if (e.type === 'ring') {
+        playRing();
+        showToast(`+${CONFIG.ringBonus}`);
+      } else if (e.type === 'level') {
         startLevelFade(false);
         showBanner(now);
         playLevelUp();
@@ -506,9 +604,16 @@ function frame(now) {
   if (mode === 'playing') updateBank(realDt);
   updateRoll();
   view.flash = Math.max(view.flash, updateLightning(now));
-  view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
-  view.yaw = CONFIG.shipYawFactor * Math.atan2(game.vx, Math.max(1, game.speed));
-  drawFrame(renderer, game, view);
+  if (gameMode === 'flight') {
+    // The camera follows climbs and dives with a slight lag.
+    const target = flight.y + CONFIG.flightCameraAbove;
+    view.camY += (target - view.camY) * (1 - Math.exp(-CONFIG.flightCameraFollow * realDt));
+    drawFlightFrame(renderer, flightRenderer, flight, view);
+  } else {
+    view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
+    view.yaw = CONFIG.shipYawFactor * Math.atan2(game.vx, Math.max(1, game.speed));
+    drawFrame(renderer, game, view);
+  }
   if (DEBUG) updateFps(now);
 }
 
@@ -560,6 +665,7 @@ function setupDebug() {
   const inv = make('button', 'Invincible', toggles);
   inv.addEventListener('click', () => {
     game.invincible = !game.invincible;
+    flight.invincible = game.invincible;
     inv.classList.toggle('on', game.invincible);
   });
   const hit = make('button', 'Hitboxes', toggles);
@@ -578,7 +684,8 @@ function setupDebug() {
 
 function debugJump(index) {
   if (mode !== 'playing') startRun();
-  jumpToLevel(game, index);
+  if (gameMode === 'flight') jumpFlightToLevel(flight, index);
+  else jumpToLevel(game, index);
   lastLabel = '';
   startLevelFade(true);
   updateHud();
@@ -588,7 +695,8 @@ function debugJump(index) {
 function updateFps(now) {
   fpsFrames++;
   if (now - fpsSince >= 500) {
-    fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · cubes ${game.spawner.cubes.length}`;
+    const count = gameMode === 'flight' ? flight.spawner.boxes.length : game.spawner.cubes.length;
+    fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · obstacles ${count}`;
     fpsFrames = 0;
     fpsSince = now;
   }
@@ -609,6 +717,12 @@ $('btn-history').addEventListener('click', openHistory);
 $('btn-history-done').addEventListener('click', toMenu);
 for (const b of document.querySelectorAll('[data-order]')) {
   b.addEventListener('click', () => { historyOrder = b.dataset.order; renderHistory(); });
+}
+for (const b of document.querySelectorAll('[data-hmode]')) {
+  b.addEventListener('click', () => { historyMode = b.dataset.hmode; renderHistory(); });
+}
+for (const b of document.querySelectorAll('[data-mode]')) {
+  b.addEventListener('click', () => setGameMode(b.dataset.mode));
 }
 $('btn-history-clear').addEventListener('click', () => $('history-confirm').classList.remove('hidden'));
 $('btn-history-clear-no').addEventListener('click', () => $('history-confirm').classList.add('hidden'));
@@ -631,17 +745,20 @@ for (const btn of document.querySelectorAll('[data-controls]')) {
 }
 $('btn-sound').addEventListener('click', () => changeSetting((s) => { s.sound = !s.sound; }));
 $('btn-vibration').addEventListener('click', () => changeSetting((s) => { s.vibration = !s.vibration; }));
+$('btn-invert').addEventListener('click', () => changeSetting((s) => { s.invertY = !s.invertY; }));
 $('btn-reset').addEventListener('click', () => $('reset-confirm').classList.remove('hidden'));
 $('btn-reset-no').addEventListener('click', () => $('reset-confirm').classList.add('hidden'));
 $('btn-reset-yes').addEventListener('click', () => {
   const fresh = defaultSave();
   save.bestScore = fresh.bestScore;
   save.bestLevel = fresh.bestLevel;
+  save.flightBestScore = fresh.flightBestScore;
+  save.flightBestLevel = fresh.flightBestLevel;
   writeSave(save);
   updateBestDisplays();
   $('reset-confirm').classList.add('hidden');
-  $('btn-reset').textContent = 'Best score reset ✓';
-  setTimeout(() => { $('btn-reset').textContent = 'Reset best score'; }, 1800);
+  $('btn-reset').textContent = 'Best scores reset ✓';
+  setTimeout(() => { $('btn-reset').textContent = 'Reset best scores'; }, 1800);
 });
 
 input.onPause = () => {
@@ -659,7 +776,8 @@ $('version').textContent = `v${APP_VERSION}`;
 window.addEventListener('resize', () => resizeRenderer(renderer));
 applySettings();
 buildPicker();
-resetGame(game, undefined, startLevelIndex());
+renderModeSwitch();
+resetCurrent();
 startLevelFade(true);
 updateInstallUi();
 if (DEBUG) setupDebug();
