@@ -19,6 +19,7 @@ import {
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
+  playShot, playHit, playBoom,
 } from './audio.js';
 
 const DEG = Math.PI / 180;
@@ -215,8 +216,8 @@ const HOWTO = {
   drag: 'Drag left or right to steer. Hold Boost to go faster.',
 };
 const HOWTO_FLIGHT = {
-  touch: 'Drag anywhere to fly: left, right, up and down. Fly through rings for bonus points.',
-  tilt: 'Tilt to fly: sideways to turn, toward/away from you to climb/dive. Rings give bonus points.',
+  touch: 'Drag anywhere to fly. Your guns fire by themselves: line up the reticle with drones to blast them.',
+  tilt: 'Tilt to fly: sideways to turn, toward/away to climb/dive. Guns fire by themselves: aim at drones.',
 };
 function howto() {
   if (gameMode === 'flight') return save.settings.controls === 'tilt' ? HOWTO_FLIGHT.tilt : HOWTO_FLIGHT.touch;
@@ -330,7 +331,8 @@ function showGameOver() {
   $('over-score').textContent = g.score;
   $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(g.info)}` +
     (startNumber > 1 ? ` (started at ${startNumber})` : '') +
-    (gameMode === 'flight' && flight.rings > 0 ? ` · ${flight.rings} ring${flight.rings === 1 ? '' : 's'}` : '');
+    (gameMode === 'flight' && flight.rings > 0 ? ` · ${flight.rings} ring${flight.rings === 1 ? '' : 's'}` : '') +
+    (gameMode === 'flight' && flight.kills > 0 ? ` · ${flight.kills} drone${flight.kills === 1 ? '' : 's'}` : '');
   // "Your #3 score" for a good run that isn't a new best (within this mode).
   const rank = rankOf(save, g.score, gameMode);
   const runs = runsIn(save, gameMode);
@@ -369,6 +371,8 @@ function renderSettings() {
   $('btn-vibration').setAttribute('aria-checked', String(save.settings.vibration));
   $('btn-invert').textContent = `3D up/down: ${save.settings.invertY ? 'Inverted (like a plane)' : 'Normal'}`;
   $('btn-invert').setAttribute('aria-checked', String(save.settings.invertY));
+  $('btn-autofire').textContent = `3D auto-fire: ${save.settings.autoFire ? 'On' : 'Off'}`;
+  $('btn-autofire').setAttribute('aria-checked', String(save.settings.autoFire));
 }
 
 function applySettings() {
@@ -562,7 +566,8 @@ function frame(now) {
     let events;
     if (gameMode === 'flight') {
       getFlightSteer(input, flightSteer, save.settings.invertY);
-      events = stepFlight(flight, dt, flightSteer.x, flightSteer.y, getBoost(input, true));
+      events = stepFlight(flight, dt, flightSteer.x, flightSteer.y, getBoost(input, true),
+        save.settings.autoFire);
       const p = flightSteer.joystick;
       if (p) {
         view.joystick.active = true;
@@ -580,6 +585,13 @@ function frame(now) {
       else if (e.type === 'ring') {
         playRing();
         showToast(`+${CONFIG.ringBonus}`);
+      } else if (e.type === 'shot') {
+        playShot();
+      } else if (e.type === 'hit') {
+        playHit();
+      } else if (e.type === 'destroy') {
+        playBoom(e.big);
+        vibrate(e.big ? 30 : 15, save.settings.vibration);
       } else if (e.type === 'level') {
         startLevelFade(false);
         showBanner(now);
@@ -608,6 +620,7 @@ function frame(now) {
     // The camera follows climbs and dives with a slight lag.
     const target = flight.y + CONFIG.flightCameraAbove;
     view.camY += (target - view.camY) * (1 - Math.exp(-CONFIG.flightCameraFollow * realDt));
+    view.firing = save.settings.autoFire && mode === 'playing';
     drawFlightFrame(renderer, flightRenderer, flight, view);
   } else {
     view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
@@ -746,6 +759,7 @@ for (const btn of document.querySelectorAll('[data-controls]')) {
 $('btn-sound').addEventListener('click', () => changeSetting((s) => { s.sound = !s.sound; }));
 $('btn-vibration').addEventListener('click', () => changeSetting((s) => { s.vibration = !s.vibration; }));
 $('btn-invert').addEventListener('click', () => changeSetting((s) => { s.invertY = !s.invertY; }));
+$('btn-autofire').addEventListener('click', () => changeSetting((s) => { s.autoFire = !s.autoFire; }));
 $('btn-reset').addEventListener('click', () => $('reset-confirm').classList.remove('hidden'));
 $('btn-reset-no').addEventListener('click', () => $('reset-confirm').classList.add('hidden'));
 $('btn-reset-yes').addEventListener('click', () => {

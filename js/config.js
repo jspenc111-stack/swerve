@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -87,6 +87,20 @@ export const CONFIG = {
   ringBonus: 25,              // points for flying through a ring
   ringSize: 3.2,              // width/height of a ring's opening
   joystickRadiusPx: 70,       // drag this far from where you touched = full steering
+
+  // ---- 3D Flight shooting ---------------------------------------------------
+  fireRate: 6,                // shots per second (auto-fire)
+  bulletSpeed: 75,            // how much faster than the jet a shot flies
+  bulletRange: 70,            // how far a shot travels before fading out
+  aimAssistCone: 0.07,        // how generously shots lock on to a target (0 = no help)
+  targetSpacing: 32,          // distance between targets (a level can override this)
+  targetSize: 1.4,
+  bigTargetSize: 2.3,
+  bigTargetChance: 0.25,      // share of targets that are big armored ones
+  bigTargetHits: 3,           // shots needed to destroy a big target
+  targetPoints: 50,
+  bigTargetPoints: 150,
+  targetDrift: 1.6,           // how far moving targets sway side to side
 
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering

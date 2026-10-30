@@ -88,6 +88,7 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
    - Sound on/off (default on).
    - Vibration on/off (default on).
    - 3D up/down: *Normal* (drag/tilt up = climb) or *Inverted* (like a plane's control stick).
+   - 3D auto-fire: On (default) / Off.
    - "Reset best score", with a confirm step.
 6. **History**
    - Every finished run with points: score, level reached (and start level), and date/time ("Today 3:41 PM", "Yesterday …", "Oct 18, …").
@@ -115,6 +116,9 @@ A second way to play, picked on the start screen. Same levels, names, colors, ef
   | `frames` | Walls with a window to fly through. The window moves left/right and up/down from wall to wall. A small `spacing` joins the walls into a **tunnel**. |
   | `mixed` | Cycles through a sequence, like Classic. |
 
+- **Shooting**: the jet **auto-fires** (`fireRate` shots a second), alternating guns on each wing, so on a phone you only steer and boost. Shots fly straight ahead (`bulletSpeed`, `bulletRange`) with gentle **aim assist** (`aimAssistCone`): a shot locks on to the nearest drone close to the line of fire. Shots stop at obstacles. An aiming **reticle** sits straight ahead and turns gold when a drone is locked on. *3D auto-fire* can be switched off in Settings.
+- **Drones (targets)**: every `targetSpacing` (a level can override it), a drone appears near the open path but never in it. Small pink-red drones take one hit (`targetPoints`, 50); big orange armored ones (`bigTargetChance`) take `bigTargetHits` (3) hits (`bigTargetPoints`, 150) and show health pips. Some drones sway side to side (`targetDrift`). Drones are **solid**: flying into one is a crash. Destroying one gives sparks, a floating "+50", an explosion sound and a tiny buzz.
+- **Fairness with drones**: a drone is only placed if its whole sway stays out of the open lane and away from blocks; a block placed later removes an overlapping drone (walls stay whole). The 3D fairness tests count drones as solid boxes covering their sway.
 - **Bonus rings**: glowing gold frames every `ringSpacing`, always placed in the open path. Flying through one adds `ringBonus` points with a chime and a "+25" pop-up. Rings aren't solid.
 - **Fairness** (tested): an open lane at least `minGapWidth` wide and `minGapHeight` tall always exists, bending no more sharply (sideways or up/down) than the jet can follow at full boost. A test sweeps a grid of reachable (sideways, height) positions through generated obstacles for every layout, and checks every ring can be flown through.
 - **Collision**: the jet's hitbox (`flightHitboxScale` of its size) against each block's box, overlapping in all three directions.

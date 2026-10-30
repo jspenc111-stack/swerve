@@ -7,7 +7,10 @@
 // and stays near the player. No obstacle is ever allowed into it.
 //
 // Obstacles are boxes: centre x, bottom y, centre z, size w × h × d.
-// New obstacles only appear beyond the fog distance.
+// Targets (to shoot) are drones: centre (x0, y, z), size, and an optional
+// side-to-side sway (amp). They are solid, so they are also kept out of the
+// open lane, across their whole sway.
+// New obstacles and targets only appear beyond the fog distance.
 
 import { levelForDistance, inBreather } from './levels.js';
 import { makeRandom } from './spawner.js';
@@ -18,6 +21,7 @@ export function createFlightSpawner(config, levels, seed = 1) {
     levels,
     boxes: [],
     rings: [],
+    targets: [],
     pool: [],
     random: makeRandom(seed),
     nextZ: 0,
@@ -27,6 +31,7 @@ export function createFlightSpawner(config, levels, seed = 1) {
     maxSlopeY: 0.2,
     lastSpawned: 0,
     lastRings: 0,
+    lastTargets: 0,
     info: {},
   };
   resetFlightSpawner(sp, seed, 0, 0, config.flightStartAltitude);
@@ -37,6 +42,7 @@ export function resetFlightSpawner(sp, seed, startZ, playerX, playerY) {
   for (const b of sp.boxes) sp.pool.push(b);
   sp.boxes.length = 0;
   sp.rings.length = 0;
+  sp.targets.length = 0;
   sp.random = makeRandom(seed);
   sp.nextZ = startZ + sp.config.fogDistance;
   const L = sp.lane;
@@ -46,6 +52,7 @@ export function resetFlightSpawner(sp, seed, startZ, playerX, playerY) {
   L.sx = L.sy = L.tx = L.ty = 0;
   sp.lastSpawned = 0;
   sp.lastRings = 0;
+  sp.lastTargets = 0;
 }
 
 // The lowest/highest the lane's centre may go, so the whole opening fits.
@@ -62,6 +69,7 @@ export function updateFlightSpawner(sp, playerZ, playerX, playerY, speed) {
   cull(sp, playerZ, playerX);
   const boxesBefore = sp.boxes.length;
   const ringsBefore = sp.rings.length;
+  const targetsBefore = sp.targets.length;
   const v = Math.max(speed, 1);
   sp.maxSlopeX = (cfg.laneSlopeFactor * cfg.maxSteerSpeed) / v;
   sp.maxSlopeY = (cfg.laneSlopeFactor * cfg.maxClimbSpeed) / v;
@@ -73,6 +81,7 @@ export function updateFlightSpawner(sp, playerZ, playerX, playerY, speed) {
   }
   sp.lastSpawned = sp.boxes.length - boxesBefore;
   sp.lastRings = sp.rings.length - ringsBefore;
+  sp.lastTargets = sp.targets.length - targetsBefore;
 }
 
 function cull(sp, playerZ, playerX) {
@@ -90,6 +99,13 @@ function cull(sp, playerZ, playerX) {
   w = 0;
   for (let i = 0; i < rings.length; i++) if (rings[i].z >= behind) rings[w++] = rings[i];
   rings.length = w;
+  const targets = sp.targets;
+  w = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    if (t.alive && t.z >= behind && Math.abs(t.x0 - playerX) <= side) targets[w++] = t;
+  }
+  targets.length = w;
 }
 
 // ---- The open lane ---------------------------------------------------------
@@ -177,6 +193,12 @@ function spawnRow(sp, z0, playerX, playerY) {
     default: floatersRow(sp, pattern, z0, playerX, playerY);
   }
   // Bonus rings sit in the middle of the open lane, so they can always be reached.
+  // Drones to shoot, every `targetSpacing` (a level can set its own).
+  const tSpacing = outer.targetSpacing ?? cfg.targetSpacing;
+  if (tSpacing > 0) {
+    const tz = Math.ceil(z0 / tSpacing) * tSpacing;
+    if (tz >= z0 && tz < z1) placeTarget(sp, tz);
+  }
   const spacing = outer.ringSpacing || 0;
   if (spacing > 0) {
     const rz = Math.ceil(z0 / spacing) * spacing;
@@ -261,6 +283,43 @@ function framesRow(sp, p, z0, playerX, playerY) {
   if (oy1 > hy1 + 0.05) addBox(sp, (hx0 + hx1) / 2, hy1, zc, hx1 - hx0, oy1 - hy1, depth); // above
 }
 
+// A drone near the open lane (so it's worth chasing) but never in it.
+function placeTarget(sp, tz) {
+  const cfg = sp.config;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const big = sp.random() < cfg.bigTargetChance;
+    const size = big ? cfg.bigTargetSize : cfg.targetSize;
+    const amp = big || sp.random() < 0.5 ? cfg.targetDrift * (0.5 + 0.5 * sp.random()) : 0;
+    const lane = laneAt(sp, tz, { x: 0, y: 0 });
+    const x = lane.x + (sp.random() * 2 - 1) * 7;
+    const y = clamp(lane.y + (sp.random() * 2 - 1) * 3.5,
+      cfg.flightMinAltitude + size / 2, cfg.flightMaxAltitude - size / 2);
+    const z = tz + size / 2;
+    const sweptW = size + 2 * amp; // the space it covers while swaying
+    if (blocksLane(sp, x, y - size / 2, z, sweptW, size, size)) continue;
+    if (touchesBox(sp, x, y - size / 2, z, sweptW + 0.4, size + 0.4, size + 0.4)) continue;
+    sp.targets.push({
+      x0: x, x, y, z, size, amp,
+      phase: sp.random() * Math.PI * 2,
+      hp: big ? cfg.bigTargetHits : 1,
+      maxHp: big ? cfg.bigTargetHits : 1,
+      big,
+      alive: true,
+      flash: 0,
+    });
+    return;
+  }
+}
+
+function touchesBox(sp, x, y, z, w, h, d) {
+  for (let i = Math.max(0, sp.boxes.length - 60); i < sp.boxes.length; i++) {
+    const o = sp.boxes[i];
+    if (Math.abs(o.x - x) < (o.w + w) / 2 && Math.abs(o.z - z) < (o.d + d) / 2 &&
+        y < o.y + o.h && y + h > o.y) return true;
+  }
+  return false;
+}
+
 // ---- Helpers ---------------------------------------------------------------
 
 function addBox(sp, x, y, z, w, h, d) {
@@ -278,6 +337,19 @@ function addBox(sp, x, y, z, w, h, d) {
   b.h = h;
   b.d = d;
   sp.boxes.push(b);
+  // A drone placed just before this block that would overlap it is removed
+  // (the block wins, so walls and tunnels stay whole).
+  const ts = sp.targets;
+  for (let i = ts.length - 1; i >= 0 && i >= ts.length - 6; i--) {
+    const t = ts[i];
+    const tw = t.size + 2 * t.amp + 0.4;
+    const th = t.size + 0.4;
+    if (Math.abs(t.x0 - x) < (tw + w) / 2 && Math.abs(t.z - z) < (th + d) / 2 &&
+        t.y - th / 2 < y + h && t.y + th / 2 > y) {
+      t.removed = true;
+      ts.splice(i, 1);
+    }
+  }
 }
 
 function clamp(v, lo, hi) {

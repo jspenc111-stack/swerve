@@ -5,11 +5,15 @@
 // between flightMinAltitude and flightMaxAltitude. Flying through a bonus
 // ring adds ringBonus points.
 //
+// Shooting: the jet auto-fires from guns on both wings. Shots fly straight
+// ahead (with a little aim assist toward a drone near the line of fire),
+// stop at obstacles, and destroy drones for points. Drones are solid.
+//
 // Units: x = sideways, y = height above the ground, z = distance forward.
 
 import { createFlightSpawner, resetFlightSpawner, updateFlightSpawner } from './flightSpawner.js';
 import { levelForDistance, levelBaseSpeed, levelStartDistance } from './levels.js';
-import { flightHitbox, findBoxCollision } from './collision.js';
+import { flightHitbox, findBoxCollision, hitsBox } from './collision.js';
 import { capFrameTime } from './game.js';
 
 export function createFlight(config, levels, seed = 1) {
@@ -22,6 +26,10 @@ export function createFlight(config, levels, seed = 1) {
     events: [],
     seed,
     invincible: false,
+    bullets: [],     // { x, y, z, vx, vy, vz, travelled, alive }
+    fx: [],          // sparks, debris and floating "+50" text (visual only)
+    pool: [],
+    scratchBox: { x: 0, y: 0, z: 0, w: 0, h: 0, d: 0 },
   };
   resetFlight(f, seed);
   return f;
@@ -38,6 +46,10 @@ export function resetFlight(f, seed = f.seed + 1, startLevel = 0) {
   f.score = 0;
   f.bonus = 0;
   f.rings = 0;
+  f.kills = 0;
+  f.fireTimer = 0;
+  f.gun = 1;
+  if (f.bullets) { for (const b of f.bullets) f.pool.push(b); f.bullets.length = 0; f.fx.length = 0; }
   f.x = 0;
   f.vx = 0;
   f.y = cfg.flightStartAltitude;
@@ -71,8 +83,10 @@ function approach(v, input, max, accel, friction, dt) {
 }
 
 // Advance by dt seconds. steerX: -1 left … 1 right. steerY: -1 down … 1 up.
-// Returns this frame's events: { type: 'level' | 'crash' | 'ring' }.
-export function stepFlight(f, dt, steerX, steerY, boosting = false) {
+// firing: auto-fire on (true) or off.
+// Returns this frame's events: { type: 'level' | 'crash' | 'ring' | 'shot' |
+// 'hit' | 'destroy' } ('destroy' also has `points` and `big`).
+export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = false) {
   const cfg = f.config;
   const events = f.events;
   events.length = 0;
@@ -129,15 +143,183 @@ export function stepFlight(f, dt, steerX, steerY, boosting = false) {
     }
   }
 
+  // Drones sway side to side.
+  const targets = f.spawner.targets;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    t.x = t.x0 + t.amp * Math.sin(f.time * 1.4 + t.phase);
+    if (t.flash > 0) t.flash = Math.max(0, t.flash - dt);
+  }
+
+  if (firing) fire(f, dt);
+  moveBullets(f, dt);
+  updateFx(f, dt);
+
   const newScore = Math.floor((f.distance - f.startDistance) * cfg.scorePerUnit) + f.bonus;
   if (newScore > f.score) f.score = newScore;
 
   flightHitbox(f.x, f.y, f.distance, cfg, f.hitbox);
-  if (!f.invincible && findBoxCollision(f.hitbox, f.spawner.boxes)) {
+  if (!f.invincible && (findBoxCollision(f.hitbox, f.spawner.boxes) || hitsTarget(f))) {
     f.crashed = true;
     events.push(CRASH_EVENT);
   }
   return events;
+}
+
+// ---- Shooting --------------------------------------------------------------
+
+function targetBox(f, t) {
+  const b = f.scratchBox;
+  b.x = t.x; b.y = t.y - t.size / 2; b.z = t.z; b.w = t.size; b.h = t.size; b.d = t.size;
+  return b;
+}
+
+function hitsTarget(f) {
+  const ts = f.spawner.targets;
+  for (let i = 0; i < ts.length; i++) if (ts[i].alive && hitsBox(f.hitbox, targetBox(f, ts[i]))) return true;
+  return false;
+}
+
+// Auto-fire: alternate left and right wing guns at `fireRate` shots a second.
+function fire(f, dt) {
+  const cfg = f.config;
+  f.fireTimer -= dt;
+  let fired = false;
+  while (f.fireTimer <= 0) {
+    f.fireTimer += 1 / cfg.fireRate;
+    f.gun = -f.gun;
+    const b = f.pool.pop() || {};
+    b.x = f.x + f.gun * cfg.flightShipSpan * 0.22;
+    b.y = f.y - 0.03;
+    b.z = f.distance + cfg.flightShipLength * 0.3;
+    b.vz = f.speed + cfg.bulletSpeed;
+    b.vx = 0;
+    b.vy = 0;
+    b.travelled = 0;
+    b.alive = true;
+    // Aim assist: lock on to the nearest drone close to the line of fire.
+    const t = aimTarget(f, b);
+    if (t) {
+      const time = (t.z - b.z) / b.vz;
+      b.vx = (t.x - b.x) / time;
+      b.vy = (t.y - b.y) / time;
+    }
+    f.bullets.push(b);
+    fired = true;
+  }
+  if (fired) f.events.push(SHOT_EVENT);
+}
+
+function aimTarget(f, b) {
+  const cfg = f.config;
+  let best = null;
+  let bestDz = Infinity;
+  const ts = f.spawner.targets;
+  for (let i = 0; i < ts.length; i++) {
+    const t = ts[i];
+    const dz = t.z - b.z;
+    if (!t.alive || dz <= 1 || dz > cfg.bulletRange) continue;
+    const cone = t.size / 2 + 0.6 + cfg.aimAssistCone * dz;
+    if (Math.abs(t.x - b.x) < cone && Math.abs(t.y - b.y) < cone && dz < bestDz) {
+      best = t;
+      bestDz = dz;
+    }
+  }
+  return best;
+}
+
+function moveBullets(f, dt) {
+  const cfg = f.config;
+  const bullets = f.bullets;
+  const boxes = f.spawner.boxes;
+  const ts = f.spawner.targets;
+  let w = 0;
+  for (let i = 0; i < bullets.length; i++) {
+    const b = bullets[i];
+    const px = b.x, py = b.y, pz = b.z;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.z += b.vz * dt;
+    b.travelled += b.vz * dt;
+    // Did this step pass through a drone? (closest point on the step's path)
+    for (let k = 0; k < ts.length && b.alive; k++) {
+      const t = ts[k];
+      if (!t.alive || t.z + t.size < pz || t.z - t.size > b.z) continue;
+      const sx = b.x - px, sy = b.y - py, sz = b.z - pz;
+      const len2 = sx * sx + sy * sy + sz * sz || 1;
+      let u = ((t.x - px) * sx + (t.y - py) * sy + (t.z - pz) * sz) / len2;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const cx = px + sx * u - t.x, cy = py + sy * u - t.y, cz = pz + sz * u - t.z;
+      const r = t.size * 0.6;
+      if (cx * cx + cy * cy + cz * cz < r * r) {
+        b.alive = false;
+        hitDrone(f, t);
+      }
+    }
+    // Shots stop at obstacles (check the middle and end of the step).
+    for (let k = 0; k < boxes.length && b.alive; k++) {
+      const o = boxes[k];
+      if (Math.abs(o.z - b.z) > o.d / 2 + 2) continue;
+      for (const u of [0.5, 1]) {
+        const x = px + (b.x - px) * u, y = py + (b.y - py) * u, z = pz + (b.z - pz) * u;
+        if (Math.abs(x - o.x) < o.w / 2 && Math.abs(z - o.z) < o.d / 2 && y > o.y && y < o.y + o.h) {
+          b.alive = false;
+          burst(f, x, y, o.z - o.d / 2, 5, 0.25, '#fff3c4');
+          break;
+        }
+      }
+    }
+    if (b.alive && b.travelled < cfg.bulletRange) bullets[w++] = b;
+    else f.pool.push(b);
+  }
+  bullets.length = w;
+}
+
+function hitDrone(f, t) {
+  const cfg = f.config;
+  t.hp--;
+  t.flash = 0.12;
+  if (t.hp > 0) {
+    burst(f, t.x, t.y, t.z - t.size / 2, 6, 0.3, '#ffffff');
+    f.events.push(HIT_EVENT);
+    return;
+  }
+  t.alive = false;
+  const points = t.big ? cfg.bigTargetPoints : cfg.targetPoints;
+  f.bonus += points;
+  f.kills++;
+  burst(f, t.x, t.y, t.z, t.big ? 26 : 16, t.big ? 0.9 : 0.6, t.big ? '#ffb347' : '#ff6b8b');
+  f.fx.push({ kind: 'text', text: `+${points}`, x: t.x, y: t.y + t.size, z: t.z, vx: 0, vy: 1.6, vz: f.speed * 0.6, life: 0.9, maxLife: 0.9 });
+  f.events.push({ type: 'destroy', points, big: t.big });
+}
+
+// Sparks flying out from a point (visual only).
+function burst(f, x, y, z, count, life, color) {
+  for (let i = 0; i < count && f.fx.length < 160; i++) {
+    const a = (i / count) * Math.PI * 2 + i * 0.7;
+    const e = 2 + (i % 5);
+    f.fx.push({
+      kind: 'spark', color, x, y, z,
+      vx: Math.cos(a) * e, vy: Math.sin(a) * e + 1, vz: f.speed * 0.8 + ((i % 3) - 1) * 2,
+      life, maxLife: life,
+    });
+  }
+}
+
+function updateFx(f, dt) {
+  const fx = f.fx;
+  let w = 0;
+  for (let i = 0; i < fx.length; i++) {
+    const p = fx[i];
+    p.life -= dt;
+    if (p.life <= 0) continue;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+    if (p.kind === 'spark') p.vy -= 9 * dt;
+    fx[w++] = p;
+  }
+  fx.length = w;
 }
 
 // Debug helper: jump to the start of a level (0-based absolute index).
@@ -157,6 +339,9 @@ export function jumpFlightToLevel(f, absIndex) {
   f.baseSpeed = flightBaseSpeed(f);
   f.speed = f.baseSpeed;
   resetFlightSpawner(f.spawner, f.seed + absIndex * 7919, start, f.x, f.y);
+  for (const b of f.bullets) f.pool.push(b);
+  f.bullets.length = 0;
+  f.fx.length = 0;
   f.events.length = 0;
   f.events.push(LEVEL_EVENT);
   return f.events;
@@ -165,3 +350,5 @@ export function jumpFlightToLevel(f, absIndex) {
 const LEVEL_EVENT = Object.freeze({ type: 'level' });
 const CRASH_EVENT = Object.freeze({ type: 'crash' });
 const RING_EVENT = Object.freeze({ type: 'ring' });
+const SHOT_EVENT = Object.freeze({ type: 'shot' });
+const HIT_EVENT = Object.freeze({ type: 'hit' });

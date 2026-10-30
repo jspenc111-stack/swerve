@@ -67,10 +67,14 @@ export function drawFlightFrame(r, s, f, view) {
   drawShadow(r, f, cam);
   drawWorld(r, s, f, cam, view.glow || 0);
   if (view.hitboxes) drawHitbox(r, f, cam);
+  drawBullets(r, f, cam);
+  drawFx(r, f, cam, false);
+  if (view.firing) drawReticle(r, f, cam);
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
   if (view.showShip !== false) drawJet(r, s, p, f, cam);
+  drawFx(r, f, cam, true); // floating "+50" text on top
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   if (view.joystick && view.joystick.active) drawJoystick(r, view.joystick);
@@ -176,12 +180,19 @@ function drawWorld(r, s, f, cam, glow) {
     if (g.passed || g.z - cam.z <= NEAR || g.z - cam.z > cfg.fogDistance) continue;
     items.push(g);
   }
+  const targets = f.spawner.targets;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    if (!t.alive || t.z - t.size / 2 - cam.z <= NEAR || t.z - cam.z > cfg.fogDistance) continue;
+    items.push(t);
+  }
   items.sort(byFarFirst);
   const fogStart = cfg.fogStart;
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
-    if (it.size !== undefined) drawRing(r, it, cam, fogStart, fogRange);
+    if (it.hp !== undefined) drawDrone(r, it, cam, f.time, fogStart, fogRange);
+    else if (it.taken !== undefined) drawRing(r, it, cam, fogStart, fogRange);
     else drawBox(r, s, it, cam, glow, fogStart, fogRange);
   }
   ctx.globalAlpha = 1;
@@ -261,6 +272,179 @@ function drawRing(r, g, cam, fogStart, fogRange) {
   ctx.strokeStyle = '#fff3c4';
   ctx.lineWidth = Math.max(1, 0.1 * k);
   ctx.strokeRect(RA.x, RA.y, RB.x - RA.x, RB.y - RA.y);
+  ctx.globalAlpha = 1;
+}
+
+// ---- Shooting visuals --------------------------------------------------------
+
+// A drone: a spinning faceted crystal with a glowing core. Small ones are
+// pink-red; big armored ones are orange with a spinning ring and health pips.
+const DRONE_FACES = [[0, 2, 3], [0, 3, 4], [0, 4, 5], [0, 5, 2], [1, 3, 2], [1, 4, 3], [1, 5, 4], [1, 2, 5]];
+const DV = [{}, {}, {}, {}, {}, {}];
+const DS = [{}, {}, {}, {}, {}, {}];
+const LIGHT2 = (() => { const l = Math.hypot(-0.4, 1, -0.5); return [-0.4 / l, 1 / l, -0.5 / l]; })();
+function drawDrone(r, t, cam, time, fogStart, fogRange) {
+  const ctx = r.ctx;
+  const h = t.size / 2;
+  const spin = time * (t.big ? 1.6 : 2.6) + t.phase;
+  const c = Math.cos(spin), sn = Math.sin(spin);
+  // Octahedron: top, bottom, then four around the middle.
+  const pts = [[0, h * 1.25, 0], [0, -h * 1.25, 0], [h, 0, 0], [0, 0, h], [-h, 0, 0], [0, 0, -h]];
+  for (let i = 0; i < 6; i++) {
+    const [x, y, z] = pts[i];
+    DV[i].x = t.x + x * c - z * sn;
+    DV[i].y = t.y + y;
+    DV[i].z = t.z + x * sn + z * c;
+    proj(r, cam, DV[i].x, DV[i].y, DV[i].z, DS[i]);
+  }
+  let fog = (t.z - cam.z - fogStart) / fogRange;
+  fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
+  ctx.globalAlpha = 1 - fog * 0.8;
+  const base = t.flash > 0 ? [255, 255, 255] : t.big ? [255, 150, 40] : [255, 70, 110];
+  for (const [a, b, d] of DRONE_FACES) {
+    const A = DV[a], B = DV[b], D = DV[d];
+    const ux = B.x - A.x, uy = B.y - A.y, uz = B.z - A.z;
+    const wx = D.x - A.x, wy = D.y - A.y, wz = D.z - A.z;
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+    // Only faces turned toward the camera (it's a closed shape).
+    if (nx * (cam.x - A.x) + ny * (cam.y - A.y) + nz * (cam.z - A.z) <= 0) continue;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    const lit = 0.35 + 0.65 * Math.max(0, (nx * LIGHT2[0] + ny * LIGHT2[1] + nz * LIGHT2[2]) / nl);
+    ctx.fillStyle = `rgb(${(base[0] * lit) | 0},${(base[1] * lit) | 0},${(base[2] * lit) | 0})`;
+    ctx.beginPath();
+    ctx.moveTo(DS[a].x, DS[a].y); ctx.lineTo(DS[b].x, DS[b].y); ctx.lineTo(DS[d].x, DS[d].y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const k = r.f / (t.z - cam.z);
+  const centre = proj(r, cam, t.x, t.y, t.z, {});
+  // A pulsing outline so drones stand out even far away (never smaller than ~9px).
+  const ringR = Math.max(9, h * 1.5 * k) * (1 + 0.12 * Math.sin(time * 6 + t.phase));
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = t.big ? 'rgba(255,140,30,0.9)' : 'rgba(255,60,110,0.9)';
+  ctx.beginPath();
+  ctx.arc(centre.x, centre.y, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  if (h * k < 5) { // very far: draw a solid dot so it's visible
+    ctx.fillStyle = t.big ? '#ff8c1e' : '#ff3c6e';
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Glowing core.
+  ctx.globalCompositeOperation = 'lighter';
+  const glowR = h * 1.4 * k;
+  const g = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, glowR);
+  g.addColorStop(0, `rgba(255,255,255,${(0.7 * (1 - fog)).toFixed(2)})`);
+  g.addColorStop(0.4, t.big ? 'rgba(255,170,60,0.35)' : 'rgba(255,80,130,0.35)');
+  g.addColorStop(1, 'rgba(255,80,130,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(centre.x, centre.y, glowR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  if (t.big) {
+    // Spinning armor ring and health pips.
+    ctx.strokeStyle = t.flash > 0 ? '#ffffff' : '#ffd08a';
+    ctx.lineWidth = Math.max(1.5, 0.08 * k);
+    ctx.beginPath();
+    ctx.ellipse(centre.x, centre.y, h * 1.6 * k, h * 0.45 * k, Math.sin(spin) * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+    const pip = Math.max(3, 0.12 * k);
+    for (let i = 0; i < t.maxHp; i++) {
+      ctx.fillStyle = i < t.hp ? '#ffd166' : 'rgba(255,255,255,0.25)';
+      ctx.fillRect(centre.x + (i - (t.maxHp - 1) / 2) * pip * 1.8 - pip / 2, centre.y - h * 1.9 * k, pip, pip);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Shots: short bright tracers.
+const BA = {}, BB = {};
+function drawBullets(r, f, cam) {
+  const ctx = r.ctx;
+  const bullets = f.bullets;
+  if (!bullets.length) return;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < bullets.length; i++) {
+    const b = bullets[i];
+    const tail = Math.max(b.z - 1.6, cam.z + NEAR);
+    if (b.z - cam.z <= NEAR + 0.1) continue;
+    proj(r, cam, b.x - b.vx * 0.017, b.y - b.vy * 0.017, tail, BA);
+    proj(r, cam, b.x, b.y, b.z, BB);
+    const k = r.f / (b.z - cam.z);
+    // Warm orange glow with a pale core: visible on light and dark skies.
+    ctx.strokeStyle = 'rgba(255,140,30,0.75)';
+    ctx.lineWidth = Math.max(3.5, 0.24 * k);
+    ctx.beginPath(); ctx.moveTo(BA.x, BA.y); ctx.lineTo(BB.x, BB.y); ctx.stroke();
+    ctx.strokeStyle = '#fff1b8';
+    ctx.lineWidth = Math.max(1.4, 0.08 * k);
+    ctx.beginPath(); ctx.moveTo(BA.x, BA.y); ctx.lineTo(BB.x, BB.y); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+
+// Sparks (world pass) and floating "+50" text (on top of everything).
+const FP = {};
+function drawFx(r, f, cam, textPass) {
+  const ctx = r.ctx;
+  const fx = f.fx;
+  if (!fx.length) return;
+  for (let i = 0; i < fx.length; i++) {
+    const p = fx[i];
+    if (p.z - cam.z <= NEAR) continue;
+    if ((p.kind === 'text') !== textPass) continue;
+    proj(r, cam, p.x, p.y, p.z, FP);
+    const a = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = a;
+    if (textPass) {
+      ctx.font = '800 24px system-ui, -apple-system, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeText(p.text, FP.x, FP.y);
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText(p.text, FP.x, FP.y);
+    } else {
+      const k = r.f / (p.z - cam.z);
+      const sz = Math.max(2, 0.12 * k * (0.5 + a));
+      ctx.fillStyle = p.color;
+      ctx.fillRect(FP.x - sz / 2, FP.y - sz / 2, sz, sz);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// Aiming reticle straight ahead; it turns gold and tightens when a drone is locked on.
+function drawReticle(r, f, cam) {
+  const cfg = r.config;
+  const ctx = r.ctx;
+  const z = f.distance + 26;
+  proj(r, cam, f.x, f.y - 0.03, z, FP);
+  let locked = false;
+  const ts = f.spawner.targets;
+  for (let i = 0; i < ts.length && !locked; i++) {
+    const t = ts[i];
+    const dz = t.z - f.distance;
+    if (!t.alive || dz <= 1 || dz > cfg.bulletRange) continue;
+    const cone = t.size / 2 + 0.6 + cfg.aimAssistCone * dz;
+    locked = Math.abs(t.x - f.x) < cone && Math.abs(t.y - f.y) < cone;
+  }
+  const R = locked ? 11 : 14;
+  ctx.beginPath();
+  ctx.arc(FP.x, FP.y, R, 0, Math.PI * 2);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    ctx.moveTo(FP.x + dx * (R + 3), FP.y + dy * (R + 3));
+    ctx.lineTo(FP.x + dx * (R + 9), FP.y + dy * (R + 9));
+  }
+  ctx.globalAlpha = locked ? 0.95 : 0.7;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.strokeStyle = locked ? '#ffd166' : '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.globalAlpha = 1;
 }
 

@@ -16,7 +16,7 @@ export function defaultSave() {
     flightBestLevel: 1,
     settings: {
       controls: 'sides', sound: true, vibration: true, startLevel: 1,
-      mode: 'classic', invertY: false,
+      mode: 'classic', invertY: false, autoFire: true,
     },
     history: [],
   };
@@ -70,6 +70,7 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
     if (isLevel(s.startLevel)) save.settings.startLevel = Math.floor(s.startLevel);
     if (GAME_MODES.includes(s.mode)) save.settings.mode = s.mode;
     if (typeof s.invertY === 'boolean') save.settings.invertY = s.invertY;
+    if (typeof s.autoFire === 'boolean') save.settings.autoFire = s.autoFire;
   }
   if (Array.isArray(raw.history)) {
     for (const run of raw.history) {
@@ -96,6 +97,7 @@ export function writeSave(save, storage = defaultStorage()) {
       startLevel: save.settings.startLevel,
       mode: save.settings.mode,
       invertY: save.settings.invertY,
+      autoFire: save.settings.autoFire,
     },
     history: save.history.map(cleanRun).filter(Boolean),
   };

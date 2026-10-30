@@ -109,3 +109,99 @@ test('3D collision: overlap needed in all three directions, touching is not a hi
   assert.equal(hitsBox(hb, box(0, 4, 10 + hb.halfD + 1, 2, 2, 2)), false, 'box just ahead');
   assert.ok(hb.halfW < CONFIG.flightShipSpan / 2, 'hitbox is smaller than the drawn jet');
 });
+
+// ---- Shooting --------------------------------------------------------------
+
+const drone = (f, dz, big = false, dx = 0) => {
+  const size = big ? CONFIG.bigTargetSize : CONFIG.targetSize;
+  const t = {
+    x0: f.x + dx, x: f.x + dx, y: f.y, z: f.distance + dz, size, amp: 0, phase: 0,
+    hp: big ? CONFIG.bigTargetHits : 1, maxHp: big ? CONFIG.bigTargetHits : 1, big, alive: true, flash: 0,
+  };
+  f.spawner.targets.push(t);
+  return t;
+};
+const clearAhead = (f) => { f.spawner.boxes.length = 0; f.spawner.targets.length = 0; };
+
+test('auto-fire shoots fireRate shots a second, only when firing is on', () => {
+  const f = fresh();
+  clearAhead(f);
+  let shots = 0;
+  for (let i = 0; i < 60; i++) {
+    stepFlight(f, 1 / 60, 0, 0, false, false);
+    clearAhead(f);
+  }
+  assert.equal(f.bullets.length, 0, 'no shots with auto-fire off');
+  for (let i = 0; i < 60; i++) {
+    shots += stepFlight(f, 1 / 60, 0, 0, false, true).filter((e) => e.type === 'shot').length;
+    clearAhead(f);
+  }
+  assert.ok(shots >= CONFIG.fireRate - 1 && shots <= CONFIG.fireRate + 1, `${shots} shots in one second`);
+});
+
+test('a shot destroys a small drone and scores its points', () => {
+  const f = fresh();
+  clearAhead(f);
+  const t = drone(f, 25);
+  const events = [];
+  for (let i = 0; i < 60 && t.alive; i++) events.push(...stepFlight(f, 1 / 60, 0, 0, false, true));
+  assert.equal(t.alive, false);
+  assert.equal(f.kills, 1);
+  assert.equal(f.bonus, CONFIG.targetPoints);
+  const d = events.find((e) => e.type === 'destroy');
+  assert.ok(d && d.points === CONFIG.targetPoints && d.big === false);
+  assert.ok(f.score >= CONFIG.targetPoints);
+});
+
+test(`a big drone takes ${CONFIG.bigTargetHits} hits`, () => {
+  const f = fresh();
+  clearAhead(f);
+  const t = drone(f, 40, true);
+  const events = [];
+  for (let i = 0; i < 120 && t.alive; i++) events.push(...stepFlight(f, 1 / 60, 0, 0, false, true));
+  assert.equal(t.alive, false);
+  assert.equal(events.filter((e) => e.type === 'hit').length, CONFIG.bigTargetHits - 1);
+  assert.equal(f.bonus, CONFIG.bigTargetPoints);
+});
+
+test('aim assist helps shots hit a drone slightly off the line of fire', () => {
+  const f = fresh();
+  clearAhead(f);
+  const t = drone(f, 30, false, 1.6); // off to the side: straight shots would miss
+  for (let i = 0; i < 60 && t.alive; i++) stepFlight(f, 1 / 60, 0, 0, false, true);
+  assert.equal(t.alive, false);
+});
+
+test('shots stop at obstacles and cannot hit drones behind them', () => {
+  const f = fresh();
+  clearAhead(f);
+  f.spawner.boxes.push({ x: f.x, y: 0, z: f.distance + 15, w: 6, h: 12, d: 1.2 });
+  const t = drone(f, 30);
+  for (let i = 0; i < 40; i++) stepFlight(f, 1 / 60, 0, 0, false, true);
+  assert.equal(t.alive, true, 'the wall protected the drone');
+  assert.equal(f.kills, 0);
+});
+
+test('flying into a drone is a crash', () => {
+  const f = createFlight(CONFIG, LEVELS, 21);
+  clearAhead(f);
+  drone(f, 0.5);
+  const events = stepFlight(f, 1 / 60, 0, 0, false, false);
+  assert.ok(events.some((e) => e.type === 'crash'));
+});
+
+test('drones sway side to side but stay within their sway', () => {
+  const f = fresh();
+  clearAhead(f);
+  const t = drone(f, 60);
+  t.amp = 1.5;
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < 300; i++) {
+    stepFlight(f, 1 / 60, 0, 0, false, false);
+    f.spawner.boxes.length = 0;
+    min = Math.min(min, t.x);
+    max = Math.max(max, t.x);
+  }
+  assert.ok(max - min > 2, 'it moves');
+  assert.ok(min >= t.x0 - 1.5 - 1e-9 && max <= t.x0 + 1.5 + 1e-9, 'within its sway');
+});

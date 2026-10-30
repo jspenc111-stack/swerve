@@ -116,3 +116,31 @@ export function playRing() {
     tone(t + 0.06, 'sine', 1568, 1568, 0.28, 0.18);
   } catch { /* ignore */ }
 }
+
+// Soft "pew" for each shot (kept quiet: it repeats several times a second).
+export function playShot() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    tone(t, 'square', 1400, 500, 0.06, 0.035);
+  } catch { /* ignore */ }
+}
+
+// "Tink" when a shot hits a big drone's armor.
+export function playHit() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    tone(t, 'triangle', 2200, 1600, 0.08, 0.12);
+  } catch { /* ignore */ }
+}
+
+// Drone explosion: a bright pop over a rumble (bigger for big drones).
+export function playBoom(big = false) {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    noiseBurst(t, big ? 0.6 : 0.35, 'lowpass', 3000, 150, big ? 0.7 : 0.45);
+    tone(t, 'sine', big ? 180 : 260, 50, big ? 0.45 : 0.25, big ? 0.6 : 0.4);
+  } catch { /* ignore */ }
+}
