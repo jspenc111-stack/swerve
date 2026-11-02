@@ -3,7 +3,7 @@
 Rules for any Claude Code session working in this repo. Read `SPEC.md` for the full design.
 
 ## What this is
-Swerve is a personal one-player arcade game: steer an arrow across a field and dodge cubes. It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The owner is **not a developer**.
+Swerve is a personal one-player arcade game with two modes: **Classic** (steer an arrow across a field and dodge cubes) and **3D Flight** (fly a jet up, down and around 3D obstacles and shoot drones). It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The owner is **not a developer**.
 
 ## How to work
 - Always work on a **new branch** and open a **pull request**. Never push directly to `main`. The owner approves PRs in the GitHub mobile app.
@@ -33,7 +33,7 @@ Swerve is a personal one-player arcade game: steer an arrow across a field and d
 - Keep the Content Security Policy in `index.html` intact.
 - The only stored data is the `swerve:v1` key in localStorage (best score and level per mode, settings, score history). Don't add more without the owner's say-so.
 - The repo is **public**. Never commit personal information (names, emails, locations, anything about the owner).
-- Every obstacle pattern must always leave a passable gap (`minGapWidth`), and the fairness tests must cover it.
+- Every obstacle pattern must always leave a passable gap (`minGapWidth`, and `minGapHeight` in 3D Flight), and the fairness tests must cover it. In 3D Flight, drones count as obstacles and must stay out of the open path.
 - Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner or other existing games.
 - The service worker stays **network-first with cache fallback**. Don't switch to cache-first, or the owner gets stuck on old versions.
 

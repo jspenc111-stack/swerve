@@ -1,6 +1,6 @@
 # Swerve
 
-A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes. It speeds up, and every level changes the colors and the obstacles.
+A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes, or switch to 3D Flight to fly a jet up, down and around obstacles and shoot drones. It speeds up, and every level changes the colors and the obstacles.
 
 It's a **PWA** (a web page that installs like an app and works offline) hosted on **GitHub Pages** (GitHub's free website hosting).
 

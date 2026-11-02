@@ -15,6 +15,8 @@
 - The game keeps speeding up. Every level changes the colors and scenery and introduces new obstacle patterns, such as slalom gates and winding canyons.
 - The score goes up with distance. The best score is saved on the phone.
 
+There are two modes, chosen on the start screen: **Classic** (described above) and **3D Flight** (§4b), where you fly a jet up, down and around 3D obstacles and shoot drones for bonus points.
+
 **It must be an original game.** Don't use the name, logo, art, sounds or text of Cubefield, Cube Runner or any other existing game. Only the general idea (an arrow dodging cubes) is borrowed.
 
 **It will be customized over time.** Every tunable number, color and level definition lives in **one file, `js/config.js`**, so future changes ("make it faster", "add a purple level") are small and safe.
@@ -30,7 +32,7 @@
 | Must work as an installable **PWA** (§9) and play **fully offline** after the first visit. | Feels like a real app on the home screen. |
 | Hosted on **GitHub Pages** from the `main` branch root. Use **relative paths everywhere** (`./js/main.js`, never `/js/main.js`), because the site lives at `https://<user>.github.io/swerve/`. | Absolute paths break on GitHub Pages subfolders. |
 | No network calls at runtime other than loading the app's own files. No external fonts, CDNs, analytics or trackers. | Privacy (§10) and offline play. |
-| Game logic modules (`game.js`, `levels.js`, `collision.js`, `spawner.js`) must not touch the DOM or canvas, so they can be unit tested in Node. | Testability. |
+| Game logic modules (`game.js`, `flight.js`, `levels.js`, `collision.js`, `spawner.js`, `flightSpawner.js`) must not touch the DOM or canvas, so they can be unit tested in Node. | Testability. |
 | Tests use Node's built-in test runner: `node --test`. No test libraries. | No dependencies. |
 
 ---
@@ -46,15 +48,18 @@
 ├── icons/                  # icon-192.png, icon-512.png, icon-maskable-512.png, icon.svg
 ├── js/
 │   ├── config.js           # ALL tunable values + level definitions + APP_VERSION
-│   ├── main.js             # boot, game loop, screen switching
-│   ├── game.js             # game state: player, speed, score, level progression (pure logic)
+│   ├── main.js             # boot, game loop, screen switching (runs both modes)
+│   ├── game.js             # Classic game state: player, speed, score, level progression (pure logic)
+│   ├── flight.js           # 3D Flight game state: jet, climbing, shooting, drones, rings (pure logic)
 │   ├── levels.js           # level lookup, looping, palette blending (pure logic)
-│   ├── spawner.js          # creates obstacle patterns (pure logic, seeded random)
-│   ├── collision.js        # hit detection (pure logic)
-│   ├── render.js           # all drawing to canvas
-│   ├── input.js            # touch, tilt, keyboard
+│   ├── spawner.js          # Classic obstacle patterns (pure logic, seeded random)
+│   ├── flightSpawner.js    # 3D Flight obstacles, bonus rings and drones (pure logic, seeded random)
+│   ├── collision.js        # hit detection for both modes (pure logic)
+│   ├── render.js           # Classic drawing to canvas
+│   ├── render3d.js         # 3D Flight drawing to canvas (jet, blocks, drones, shots)
+│   ├── input.js            # touch, joystick, tilt, keyboard, Boost button
 │   ├── audio.js            # tiny synthesized sounds (Web Audio, no files)
-│   └── storage.js          # localStorage wrapper (best score, settings)
+│   └── storage.js          # localStorage wrapper (best scores, settings, history)
 ├── tests/                  # node --test files for the pure-logic modules
 ├── CLAUDE.md
 ├── SPEC.md
@@ -70,7 +75,7 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
 1. **Start screen**
    - Title "Swerve", a **mode switch** (*Classic* / *3D Flight*, remembered), the best score for the selected mode, a big **Play** button and a ⚙︎ settings button.
    - **Level picker**: a grid of all levels (number, name and a small color swatch). Play starts the run at the chosen level, which is remembered. All levels are always available. The menu background shows the chosen level's colors.
-   - A short how-to line: "Hold left or right side to steer. Hold Boost to go faster."
+   - A short how-to line that matches the mode and controls, e.g. "Hold left or right side to steer. Hold Boost to go faster." (Classic) or "Drag anywhere to fly. Your guns fire by themselves: line up the reticle with drones to blast them." (3D Flight).
    - **History** button (see 6).
    - **Install app** button, shown only when Chrome offers to install. If Chrome never offers within a few seconds and the game isn't running as the installed app, a "Can't install the app?" link opens step-by-step help (see 7).
    - The app version is shown small at the bottom (e.g. `v1.0.3`), so the owner can confirm an update arrived.
@@ -80,7 +85,7 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
    - When a level starts, a banner fades in and out (e.g. "Level 4 · Gates").
 3. **Paused**: Resume, Restart and Quit to menu.
 4. **Game over**
-   - Final score, level reached (and the start level, if not 1) and best score. Show "New best!" with a small celebration when it applies. Otherwise, for a top-10 run, show "Your #3 score out of 27 runs".
+   - Final score, level reached (and the start level, if not 1) and best score. Show "New best!" with a small celebration when it applies. Otherwise, for a top-10 run, show "Your #3 score out of 27 runs". In 3D Flight it also shows how many drones were destroyed (e.g. "· 4 drones").
    - **Play again** (big) and **Menu**.
    - Restarting must be instant: one tap, no loading.
 5. **Settings**
@@ -238,8 +243,9 @@ Adding a level means adding one entry to this list. No other code changes are ne
   - A soft "whoosh" tick on level up.
   - A crash thud.
   - A tiny chime for "New best!".
+  - 3D Flight: a bright "ding" through a bonus ring, a quiet "pew" for each shot, a "tink" when a shot hits a big drone's armor, and an explosion when a drone is destroyed (bigger for big drones).
 - Audio starts only after the first tap (browsers require this).
-- Vibration uses `navigator.vibrate`, only when it's enabled in settings.
+- Vibration uses `navigator.vibrate`, only when it's enabled in settings: on a crash, and a tiny buzz for each drone destroyed.
 - Sound and vibration are skipped silently if the phone doesn't support them.
 
 ---
@@ -277,7 +283,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ## 10. Privacy (hard rules)
 
 - **No accounts, no server and no database.** The game runs entirely on the phone.
-- **The only stored data** is the best score and best level for each mode, settings (including the chosen start level, game mode and 3D up/down choice) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
+- **The only stored data** is the best score and best level for each mode, settings (including the chosen start level, game mode, 3D up/down choice and 3D auto-fire on/off) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
 - **Nothing is ever sent anywhere.**
   - No analytics, ads, trackers or crash reporting.
   - No third-party scripts, fonts or CDNs.
@@ -301,6 +307,8 @@ These test the pure-logic modules.
 - **Fairness**:
   - for each pattern, with many seeds, generate 2 minutes of obstacles and confirm a passable gap of at least `minGapWidth` always exists;
   - no cube spawns closer than the fog distance.
+- **3D Flight fairness**: for every level's layout, with many seeds, sweep a grid of reachable (sideways, height) positions through the obstacles and confirm a `minGapWidth` × `minGapHeight` opening always exists. Drones count as solid boxes covering their full sway. Every bonus ring can be flown through.
+- **3D Flight**: climbing and the height limits, boost, crashing into blocks, rings giving bonus points, and shooting (fire rate, one-hit and three-hit drones, aim assist, walls stopping shots, flying into a drone crashes, drone sway stays in range).
 - **Levels**:
   - the correct level for a given score;
   - looping to Lap 2 increases speed;
@@ -311,8 +319,10 @@ These test the pure-logic modules.
   - the score only increases.
 - **Storage**:
   - defaults load correctly;
-  - corrupted data resets safely.
-- **Config check**: every level has all required fields, and all colors are valid.
+  - corrupted data resets safely;
+  - history, per-mode best scores and settings (including auto-fire) save and load.
+- **Config check**: every level has all required fields (Classic and 3D Flight), and all colors are valid.
+- **App files**: every app file is in the service worker's precache list, and all paths are relative.
 
 ### Debug mode (hidden)
 Opening the app with `?debug=1` at the end of the URL shows an overlay with:
@@ -354,3 +364,4 @@ It isn't linked from anywhere. It helps the owner preview new levels quickly.
 - New ship designs unlocked by score.
 - Daily challenge with a fixed seed.
 - More levels and patterns, such as moving cubes and shrinking gaps.
+- 3D Flight: drones that shoot back (with a shield or health bar), and an optional hold-to-fire button instead of auto-fire.
