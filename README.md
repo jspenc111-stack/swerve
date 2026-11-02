@@ -1,6 +1,6 @@
 # Swerve
 
-A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes, or switch to 3D Flight to fly a jet up, down and around obstacles and shoot drones. It speeds up, and every level changes the colors and the obstacles.
+A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes, switch to 3D Flight to fly a jet up, down and around obstacles and shoot drones, or fly a little helicopter through a winding cave. It speeds up, and every level changes the colors and the obstacles.
 
 It's a **PWA** (a web page that installs like an app and works offline) hosted on **GitHub Pages** (GitHub's free website hosting).
 
@@ -16,20 +16,24 @@ Open the game's web address in Chrome on the phone. It ends in `.github.io/swerv
 
 ## How to play
 
-There are two modes, chosen at the top of the menu:
+There are three modes, chosen at the top of the menu:
 
 - **Classic**: steer left and right around cubes.
 - **3D Flight**: fly a jet up, down and around floating blocks, towers, walls with windows and tunnels. Put your thumb anywhere and drag like a joystick (or tilt the phone, if you chose Tilt in Settings). The bar on the right shows your height. Settings has an option to invert up/down, like a plane.
   - **Shooting:** your guns fire by themselves. Line up the reticle (the small circle ahead of the jet) with the glowing drones to blast them: small pink ones are worth 50 points, big orange armored ones take 3 hits and are worth 150. Don't fly into them! Auto-fire can be turned off in Settings.
   - Fly through the gold rings for bonus points.
+- **Helicopter**: a side view of a helicopter flying through a cave. **Hold anywhere** on the screen to fly up, **let go** to drop. Dodge the rock blocks, spikes and gate walls, and collect gold gems for bonus points. It's best played sideways: the screen turns to landscape by itself in the installed app (it still works upright). Nothing moves until you first touch the screen.
 
-In both modes:
+In Classic and 3D Flight:
 
 - **Hold the left or right side** of the screen to steer (you can switch to *Tilt phone* or *Drag* in ⚙︎ Settings).
 - **Hold the Boost button** (bottom middle) to go 1.5× faster. You score faster too.
+
+In every mode:
+
 - **Pick a starting level** on the menu, then tap Play.
 - **History** on the menu shows every run's score, level and when you played (Recent or Top scores).
-- Don't touch the cubes. The game gets faster, and every level brings new colors and new obstacle patterns.
+- Don't touch the obstacles. The game gets faster, and every level brings new colors and new obstacle patterns.
 - After level 8 you go round again as "Lap 2", faster.
 - Tap ⏸ to pause. The game also pauses by itself if you switch apps.
 
@@ -49,7 +53,7 @@ The version number is shown small at the bottom of the start screen (for example
 ## Privacy
 
 - No accounts, no ads, no tracking, and nothing is ever sent anywhere.
-- The only things saved are your best score, best level, settings and your score history (score, level and when), kept on the phone itself.
+- The only things saved are your best score and best level for each mode, settings and your score history (score, level and when), kept on the phone itself.
 - If you use *Tilt phone*, the tilt readings are used live for steering and never stored.
 
 ## Asking for changes

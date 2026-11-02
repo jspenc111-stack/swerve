@@ -10,13 +10,13 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
-  baseSpeed: 22,            // forward speed at the very start
-  speedPerLevel: 2.5,       // added at each new level
-  speedRampPerSecond: 0.08, // gentle extra speed while you stay in a level
+  baseSpeed: 24,            // forward speed at the very start
+  speedPerLevel: 2.75,      // added at each new level
+  speedRampPerSecond: 0.09, // gentle extra speed while you stay in a level
   lapSpeedBonus: 5,         // extra speed for each lap after the first
   maxFrameTime: 0.05,       // seconds; a phone hiccup can't skip further than this
   boostMultiplier: 1.5,     // holding the boost button makes you this many times faster
@@ -102,6 +102,34 @@ export const CONFIG = {
   bigTargetPoints: 150,
   targetDrift: 1.6,           // how far moving targets sway side to side
 
+  // ---- Helicopter mode -----------------------------------------------------
+  // A side view: the helicopter flies right through a cave. Hold anywhere to
+  // rise, let go to drop. Heights and distances are in the same world units.
+  heliSpeed: 9,               // forward speed at the start
+  heliSpeedPerLevel: 0.8,     // added at each new level
+  heliSpeedRampPerSecond: 0.03, // gentle extra speed while you stay in a level
+  heliLapSpeedBonus: 2,       // extra speed for each lap after the first
+  heliGravity: 22,            // how fast you drop when you let go
+  heliLift: 44,               // upward push while holding (net climb = lift − gravity)
+  heliMaxVSpeed: 8,           // top up/down speed
+  heliPitchDeg: 10,           // how far the nose tips when climbing/falling
+  heliWidth: 2.0,             // helicopter size (body + skids, not the rotor)
+  heliHeight: 0.9,
+  heliHitboxScale: 0.75,      // hitbox is smaller than the drawing (fair near-misses)
+  heliMinGap: 3.0,            // narrowest opening ever allowed (fairness)
+  heliWorldHeight: 16,        // full cave height shown on screen
+  heliViewAhead: 26,          // you always see at least this far ahead
+  heliScreenX: 0.22,          // where the helicopter sits, as a share of the screen from the left
+  caveStep: 1,                // width of one cave column
+  caveSlopeFactor: 0.5,       // how steep the open path may get (share of the top climb speed)
+  caveCurveFactor: 0.5,       // how sharply the path may bend (share of the climb force)
+  heliScorePerUnit: 1.3,      // points per unit of distance
+  heliBreatherBefore: 6,      // obstacle-free distance before a new level starts
+  heliBreatherAfter: 20,      // ...and after it starts
+  heliGemSpacing: 40,         // distance between gems
+  heliGemBonus: 25,           // points for each gem
+  heliSmokePerSec: 14,        // exhaust puffs per second
+
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
   tiltDeadZoneDeg: 2.5,     // small tilts are ignored so the ship doesn't drift
@@ -135,6 +163,20 @@ export const CONFIG = {
 //              extent: how far the wall reaches around the window; depth: thickness
 //   mixed    — segmentLength and sequence, like Classic
 //   ringSpacing (optional): distance between bonus rings (0 = none)
+// heli: the cave for Helicopter mode. Every pattern has:
+//   opening   — cave height (at least heliMinGap; smaller = harder)
+//   wander    — 0–1, how much the open path winds up and down (1 = as much as is fair)
+//   roughness — how jagged the cave walls are
+//   speedBonus (optional) — extra speed for this level only
+// heli.type is one of:
+//   cave   — floating rock blocks. blockSpacing: distance between blocks;
+//            blockMin/blockMax: block height
+//   spikes — rock spikes from the ceiling and floor. spikeChance: chance per
+//            column; spikeMin/spikeMax: spike length
+//   gates  — walls with a window to fly through. spacing: distance between
+//            walls; window: window height (at least heliMinGap)
+//   snake  — a narrow, winding tunnel with no obstacles
+//   mixed  — segmentLength and sequence, like Classic
 // palette: sky, skyHorizon, ground, cube, ship, text, and optional grid.
 // effects (optional): glow (true/false), roll { degrees, periodSec },
 //   lightning { minGapSec, maxGapSec }.
@@ -142,8 +184,9 @@ export const CONFIG = {
 export const LEVELS = [
   {
     name: 'Morning',
-    pattern: { type: 'scatter', density: 1.6 },
-    flight: { type: 'floaters', density: 1.6, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 1.8 },
+    flight: { type: 'floaters', density: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
+    heli: { type: 'cave', opening: 9.5, wander: 0.5, roughness: 0.3, blockSpacing: 24, blockMin: 2.5, blockMax: 3.5 },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
       cube: '#8d939b', ship: '#d9483b', text: '#26303c',
@@ -151,14 +194,15 @@ export const LEVELS = [
   },
   {
     name: 'Sunset',
-    pattern: { type: 'scatter', density: 2.6 },
+    pattern: { type: 'scatter', density: 2.9 },
     flight: {
       type: 'mixed', segmentLength: 150, ringSpacing: 70,
       sequence: [
-        { type: 'floaters', density: 2.4, minSize: 1.4, maxSize: 2.8 },
-        { type: 'pillars', chance: 0.8, minHeight: 2 },
+        { type: 'floaters', density: 2.7, minSize: 1.4, maxSize: 2.8 },
+        { type: 'pillars', chance: 0.9, minHeight: 2 },
       ],
     },
+    heli: { type: 'cave', opening: 8.8, wander: 0.7, roughness: 0.4, blockSpacing: 18, blockMin: 3, blockMax: 4.2 },
     palette: {
       sky: '#ee7b5a', skyHorizon: '#fbd2a2', ground: '#e8cd9c', grid: '#d9ba85',
       cube: '#ea6457', ship: '#283a78', text: '#3a1d17',
@@ -166,8 +210,9 @@ export const LEVELS = [
   },
   {
     name: 'Lagoon',
-    pattern: { type: 'clusters', chance: 0.6, min: 3, max: 5 },
-    flight: { type: 'pillars', chance: 0.9, minHeight: 2, ringSpacing: 60 },
+    pattern: { type: 'clusters', chance: 0.66, min: 3, max: 5 },
+    flight: { type: 'pillars', chance: 1, minHeight: 2, ringSpacing: 60 },
+    heli: { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.35, spikeMin: 2, spikeMax: 4 },
     palette: {
       sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
@@ -175,8 +220,9 @@ export const LEVELS = [
   },
   {
     name: 'Gates',
-    pattern: { type: 'gates', rowSpacing: 18, gapWidth: 3.2, wingCubes: 4, between: 1 },
-    flight: { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2, ringSpacing: 66 },
+    pattern: { type: 'gates', rowSpacing: 16, gapWidth: 2.9, wingCubes: 4, between: 1 },
+    flight: { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2, ringSpacing: 66 },
+    heli: { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
     palette: {
       sky: '#c4b1e6', skyHorizon: '#efe7fa', ground: '#f6efdc', grid: '#e6d9bd',
       cube: '#7a49b4', ship: '#e46f35', text: '#2d1e46',
@@ -184,8 +230,9 @@ export const LEVELS = [
   },
   {
     name: 'Night',
-    pattern: { type: 'scatter', density: 3.6 },
-    flight: { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 4.0 },
+    flight: { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
+    heli: { type: 'cave', opening: 7.6, wander: 0.8, roughness: 0.4, blockSpacing: 13, blockMin: 3, blockMax: 4.5 },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
       cube: '#19e2ef', ship: '#ff4fa3', text: '#d8f6ff',
@@ -194,8 +241,9 @@ export const LEVELS = [
   },
   {
     name: 'Canyon',
-    pattern: { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.6 },
-    flight: { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4, ringSpacing: 48 },
+    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.7 },
+    flight: { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4, ringSpacing: 48 },
+    heli: { type: 'snake', opening: 5.4, wander: 1, roughness: 0.5 },
     palette: {
       sky: '#d5845a', skyHorizon: '#f2c08d', ground: '#a9562f', grid: '#934625',
       cube: '#6b2d1b', ship: '#f6e8c6', text: '#2a1209',
@@ -206,17 +254,25 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 160,
       sequence: [
-        { type: 'scatter', density: 2.8 },
-        { type: 'gates', rowSpacing: 16, gapWidth: 3.2, wingCubes: 5, between: 0.8 },
-        { type: 'clusters', chance: 0.6, min: 3, max: 6 },
+        { type: 'scatter', density: 3.1 },
+        { type: 'gates', rowSpacing: 14.5, gapWidth: 2.9, wingCubes: 5, between: 0.8 },
+        { type: 'clusters', chance: 0.66, min: 3, max: 6 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 160, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 2.6, minSize: 1.4, maxSize: 2.6 },
-        { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2 },
-        { type: 'pillars', chance: 0.9, minHeight: 2 },
+        { type: 'floaters', density: 2.9, minSize: 1.4, maxSize: 2.6 },
+        { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2 },
+        { type: 'pillars', chance: 1, minHeight: 2 },
+      ],
+    },
+    heli: {
+      type: 'mixed', segmentLength: 120,
+      sequence: [
+        { type: 'cave', opening: 8, wander: 0.7, roughness: 0.4, blockSpacing: 15, blockMin: 3, blockMax: 4.2 },
+        { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
+        { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.4, spikeMin: 2, spikeMax: 4 },
       ],
     },
     palette: {
@@ -231,19 +287,28 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 180,
       sequence: [
-        { type: 'scatter', density: 3.4 },
-        { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.8 },
-        { type: 'gates', rowSpacing: 15, gapWidth: 3.0, wingCubes: 6, between: 1.2 },
-        { type: 'clusters', chance: 0.7, min: 3, max: 6 },
+        { type: 'scatter', density: 3.8 },
+        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.9 },
+        { type: 'gates', rowSpacing: 13.5, gapWidth: 2.7, wingCubes: 6, between: 1.2 },
+        { type: 'clusters', chance: 0.77, min: 3, max: 6 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 180, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.8 },
-        { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4 },
-        { type: 'frames', spacing: 20, holeWidth: 3.4, holeHeight: 2.9, extent: 7, depth: 1.2 },
+        { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.8 },
+        { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4 },
+        { type: 'frames', spacing: 18, holeWidth: 3.1, holeHeight: 2.65, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 3 },
+      ],
+    },
+    heli: {
+      type: 'mixed', segmentLength: 130,
+      sequence: [
+        { type: 'cave', opening: 7.2, wander: 0.9, roughness: 0.4, blockSpacing: 12, blockMin: 3, blockMax: 4.5 },
+        { type: 'snake', opening: 5.2, wander: 1, roughness: 0.5 },
+        { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 12, window: 3.4 },
+        { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.45, spikeMin: 2, spikeMax: 4.2 },
       ],
     },
     palette: {

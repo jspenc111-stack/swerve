@@ -30,6 +30,8 @@
       <div class="alt-label">ALT</div>
     </div>
     <div id="toast" class="toast" aria-live="polite"></div>
+    <div id="heli-hold" class="heli-hold hidden">Hold to fly</div>
+    <div id="heli-turn" class="heli-turn hidden">Turn your phone sideways for a bigger view</div>
     <button id="btn-boost" class="boost-btn" aria-label="Boost (hold to go faster)">
       <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
         <path d="M12 3 4 11h5v3l3-3 3 3v-3h5z" fill="currentColor"/>
@@ -48,6 +50,7 @@
       <div class="mode-switch" role="radiogroup" aria-label="Game mode">
         <button class="mode-btn" data-mode="classic" role="radio">Classic<small>Steer left &amp; right</small></button>
         <button class="mode-btn" data-mode="flight" role="radio">3D Flight<small>Fly up, down &amp; around</small></button>
+        <button class="mode-btn" data-mode="heli" role="radio">Helicopter<small>Hold to fly up</small></button>
       </div>
       <p class="best">Best: <span id="start-best">0</span></p>
       <p class="label">Start at level</p>
@@ -98,13 +101,14 @@
         <button class="choice-btn" data-controls="tilt" role="radio">Tilt phone</button>
         <button class="choice-btn" data-controls="drag" role="radio">Drag</button>
       </div>
+      <p class="howto settings-note">Helicopter: hold anywhere to fly up.</p>
       <button id="btn-sound" class="toggle-btn" role="switch">Sound: On</button>
       <button id="btn-vibration" class="toggle-btn" role="switch">Vibration: On</button>
       <button id="btn-invert" class="toggle-btn" role="switch">3D up/down: Normal</button>
       <button id="btn-autofire" class="toggle-btn" role="switch">3D auto-fire: On</button>
       <button id="btn-reset" class="mid-btn danger">Reset best scores</button>
       <div id="reset-confirm" class="confirm hidden">
-        <p>Erase your best scores (both modes)?</p>
+        <p>Erase your best scores (all modes)?</p>
         <button id="btn-reset-yes" class="mid-btn danger">Yes, reset</button>
         <button id="btn-reset-no" class="mid-btn">Cancel</button>
       </div>
@@ -119,6 +123,7 @@
       <div class="choice" role="radiogroup" aria-label="Game mode">
         <button class="choice-btn" data-hmode="classic" role="radio">Classic</button>
         <button class="choice-btn" data-hmode="flight" role="radio">3D Flight</button>
+        <button class="choice-btn" data-hmode="heli" role="radio">Helicopter</button>
       </div>
       <div class="choice" role="radiogroup" aria-label="Sort">
         <button class="choice-btn" data-order="recent" role="radio">Recent</button>

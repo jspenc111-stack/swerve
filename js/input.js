@@ -9,6 +9,8 @@
 //   drag  — steer toward where your finger is, relative to where it first touched
 // In 3D Flight mode, touch works as a joystick (drag in any direction from
 // where you touched), and tilt uses both left/right and forward/back tilt.
+// In Helicopter mode, holding ANY touch (or the mouse, Space, ↑ or W) lifts;
+// the pause button and P/Esc pause.
 // Tilt readings are only used live for steering; they are never stored.
 
 export function createInput(target, config) {
@@ -28,6 +30,8 @@ export function createInput(target, config) {
     downKey: false,    // ↓ or S held (dive in 3D Flight)
     shiftKey: false,   // Shift held (boost in either mode)
     boostTouches: 0,   // fingers on the boost button
+    spaceKey: false,   // Space held (lift in Helicopter mode)
+    heliMode: false,   // true in Helicopter mode: Space lifts instead of pausing
   };
 
   target.addEventListener('pointerdown', (e) => {
@@ -52,7 +56,10 @@ export function createInput(target, config) {
     else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.upKey = true;
     else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') input.downKey = true;
     else if (e.key === 'Shift') input.shiftKey = true;
-    else if (e.key === ' ' || e.key === 'Escape') {
+    else if (e.key === ' ' && input.heliMode) {
+      e.preventDefault();
+      input.spaceKey = true;
+    } else if (e.key === ' ' || e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
       e.preventDefault();
       if (input.onPause && !e.repeat) input.onPause();
     }
@@ -63,6 +70,7 @@ export function createInput(target, config) {
     else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.upKey = false;
     else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') input.downKey = false;
     else if (e.key === 'Shift') input.shiftKey = false;
+    else if (e.key === ' ') input.spaceKey = false;
   });
   window.addEventListener('blur', () => clearInput(input));
 
@@ -122,6 +130,7 @@ export function clearInput(input) {
   input.upKey = false;
   input.downKey = false;
   input.shiftKey = false;
+  input.spaceKey = false;
   if (input.clearBoost) input.clearBoost();
 }
 
@@ -208,4 +217,9 @@ export function getSteer(input, viewWidth) {
     return Math.max(-1, Math.min(1, (p.x - p.startX) / cfg.dragRangePx));
   }
   return p.x < viewWidth / 2 ? -1 : 1;
+}
+
+// Helicopter mode: true while any touch, mouse button, Space, ↑ or W is held.
+export function getHeliHold(input) {
+  return input.pointers.length > 0 || input.spaceKey || input.upKey;
 }

@@ -15,7 +15,7 @@
 - The game keeps speeding up. Every level changes the colors and scenery and introduces new obstacle patterns, such as slalom gates and winding canyons.
 - The score goes up with distance. The best score is saved on the phone.
 
-There are two modes, chosen on the start screen: **Classic** (described above) and **3D Flight** (§4b), where you fly a jet up, down and around 3D obstacles and shoot drones for bonus points.
+There are three modes, chosen on the start screen: **Classic** (described above), **3D Flight** (§4b), where you fly a jet up, down and around 3D obstacles and shoot drones for bonus points, and **Helicopter** (§4c), a side-view cave flyer where you hold to rise and let go to drop.
 
 **It must be an original game.** Don't use the name, logo, art, sounds or text of Cubefield, Cube Runner or any other existing game. Only the general idea (an arrow dodging cubes) is borrowed.
 
@@ -32,7 +32,7 @@ There are two modes, chosen on the start screen: **Classic** (described above) a
 | Must work as an installable **PWA** (§9) and play **fully offline** after the first visit. | Feels like a real app on the home screen. |
 | Hosted on **GitHub Pages** from the `main` branch root. Use **relative paths everywhere** (`./js/main.js`, never `/js/main.js`), because the site lives at `https://<user>.github.io/swerve/`. | Absolute paths break on GitHub Pages subfolders. |
 | No network calls at runtime other than loading the app's own files. No external fonts, CDNs, analytics or trackers. | Privacy (§10) and offline play. |
-| Game logic modules (`game.js`, `flight.js`, `levels.js`, `collision.js`, `spawner.js`, `flightSpawner.js`) must not touch the DOM or canvas, so they can be unit tested in Node. | Testability. |
+| Game logic modules (`game.js`, `flight.js`, `heli.js`, `levels.js`, `collision.js`, `spawner.js`, `flightSpawner.js`, `caveSpawner.js`) must not touch the DOM or canvas, so they can be unit tested in Node. | Testability. |
 | Tests use Node's built-in test runner: `node --test`. No test libraries. | No dependencies. |
 
 ---
@@ -48,16 +48,19 @@ There are two modes, chosen on the start screen: **Classic** (described above) a
 ├── icons/                  # icon-192.png, icon-512.png, icon-maskable-512.png, icon.svg
 ├── js/
 │   ├── config.js           # ALL tunable values + level definitions + APP_VERSION
-│   ├── main.js             # boot, game loop, screen switching (runs both modes)
+│   ├── main.js             # boot, game loop, screen switching (runs all three modes)
 │   ├── game.js             # Classic game state: player, speed, score, level progression (pure logic)
 │   ├── flight.js           # 3D Flight game state: jet, climbing, shooting, drones, rings (pure logic)
+│   ├── heli.js             # Helicopter game state: lift/gravity, speed, score, gems, autopilot (pure logic)
 │   ├── levels.js           # level lookup, looping, palette blending (pure logic)
 │   ├── spawner.js          # Classic obstacle patterns (pure logic, seeded random)
 │   ├── flightSpawner.js    # 3D Flight obstacles, bonus rings and drones (pure logic, seeded random)
+│   ├── caveSpawner.js      # Helicopter cave: open path, walls, blocks/spikes/gates, gems (pure logic, seeded random)
 │   ├── collision.js        # hit detection for both modes (pure logic)
 │   ├── render.js           # Classic drawing to canvas
 │   ├── render3d.js         # 3D Flight drawing to canvas (jet, blocks, drones, shots)
-│   ├── input.js            # touch, joystick, tilt, keyboard, Boost button
+│   ├── renderHeli.js       # Helicopter drawing to canvas (side-view cave, helicopter, smoke, gems)
+│   ├── input.js            # touch, joystick, tilt, keyboard, Boost button, Helicopter "hold anywhere"
 │   ├── audio.js            # tiny synthesized sounds (Web Audio, no files)
 │   └── storage.js          # localStorage wrapper (best scores, settings, history)
 ├── tests/                  # node --test files for the pure-logic modules
@@ -73,9 +76,9 @@ There are two modes, chosen on the start screen: **Classic** (described above) a
 All screens are HTML overlays on top of the canvas. Use large tap targets (at least 48×48 px) and system fonts.
 
 1. **Start screen**
-   - Title "Swerve", a **mode switch** (*Classic* / *3D Flight*, remembered), the best score for the selected mode, a big **Play** button and a ⚙︎ settings button.
+   - Title "Swerve", a **mode switch** (three buttons, each with a short subtitle: *Classic* "Steer left & right" / *3D Flight* "Fly up, down & around" / *Helicopter* "Hold to fly up"; remembered), the best score for the selected mode, a big **Play** button and a ⚙︎ settings button.
    - **Level picker**: a grid of all levels (number, name and a small color swatch). Play starts the run at the chosen level, which is remembered. All levels are always available. The menu background shows the chosen level's colors.
-   - A short how-to line that matches the mode and controls, e.g. "Hold left or right side to steer. Hold Boost to go faster." (Classic) or "Drag anywhere to fly. Your guns fire by themselves: line up the reticle with drones to blast them." (3D Flight).
+   - A short how-to line that matches the mode and controls, e.g. "Hold left or right side to steer. Hold Boost to go faster." (Classic) or "Drag anywhere to fly. Your guns fire by themselves: line up the reticle with drones to blast them." (3D Flight) or "Hold anywhere to fly up. Let go to drop. Turn your phone sideways for the best view." (Helicopter). In Helicopter mode the menu background shows the chosen level's cave with the helicopter flying itself.
    - **History** button (see 6).
    - **Install app** button, shown only when Chrome offers to install. If Chrome never offers within a few seconds and the game isn't running as the installed app, a "Can't install the app?" link opens step-by-step help (see 7).
    - The app version is shown small at the bottom (e.g. `v1.0.3`), so the owner can confirm an update arrived.
@@ -85,19 +88,19 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
    - When a level starts, a banner fades in and out (e.g. "Level 4 · Gates").
 3. **Paused**: Resume, Restart and Quit to menu.
 4. **Game over**
-   - Final score, level reached (and the start level, if not 1) and best score. Show "New best!" with a small celebration when it applies. Otherwise, for a top-10 run, show "Your #3 score out of 27 runs". In 3D Flight it also shows how many drones were destroyed (e.g. "· 4 drones").
+   - Final score, level reached (and the start level, if not 1) and best score. Show "New best!" with a small celebration when it applies. Otherwise, for a top-10 run, show "Your #3 score out of 27 runs". In 3D Flight it also shows how many drones were destroyed (e.g. "· 4 drones"); in Helicopter mode, how many gems were collected (e.g. "· 3 gems").
    - **Play again** (big) and **Menu**.
    - Restarting must be instant: one tap, no loading.
 5. **Settings**
-   - Controls: *Hold sides* (default) / *Tilt phone* / *Drag*.
+   - Controls: *Hold sides* (default) / *Tilt phone* / *Drag*, with a note underneath: "Helicopter: hold anywhere to fly up." (these choices don't apply to Helicopter mode).
    - Sound on/off (default on).
    - Vibration on/off (default on).
    - 3D up/down: *Normal* (drag/tilt up = climb) or *Inverted* (like a plane's control stick).
    - 3D auto-fire: On (default) / Off.
-   - "Reset best score", with a confirm step.
+   - "Reset best scores" (all modes), with a confirm step.
 6. **History**
    - Every finished run with points: score, level reached (and start level), and date/time ("Today 3:41 PM", "Yesterday …", "Oct 18, …").
-   - A *Classic* / *3D Flight* filter (opens on the selected mode).
+   - A *Classic* / *3D Flight* / *Helicopter* filter (opens on the selected mode).
    - Two tabs: *Recent* (newest first) and *Top scores* (highest first, numbered). The best score has a ★.
    - Keeps the newest `historyMax` runs (100). "Clear history" with a confirm step (the best score stays).
 7. **Install help**: how to install from Chrome, and how to remove a broken leftover copy when Chrome says "already installed" but the app won't open (Play Store → Manage apps → uninstall; or Settings → Apps → Archived/Disabled). Warns not to use Chrome's "Clear site data", which would also wipe other apps on the same web address.
@@ -128,6 +131,40 @@ A second way to play, picked on the start screen. Same levels, names, colors, ef
 - **Fairness** (tested): an open lane at least `minGapWidth` wide and `minGapHeight` tall always exists, bending no more sharply (sideways or up/down) than the jet can follow at full boost. A test sweeps a grid of reachable (sideways, height) positions through generated obstacles for every layout, and checks every ring can be flown through.
 - **Collision**: the jet's hitbox (`flightHitboxScale` of its size) against each block's box, overlapping in all three directions.
 - **Scores**: separate best score/level for 3D Flight; runs are saved in the same history, tagged with their mode.
+
+---
+
+## 4c. Helicopter mode
+
+A third way to play (added in v1.4.0; full details in `specs/CHANGE-SPEC-v1.4.md`). A **side view** of a small helicopter flying right through an endless cave. Same 8 levels (names, colors, effects, level picker, laps), each with its own cave layout under `heli` in `config.js`.
+
+- **Controls**: **hold anywhere** to rise, **let go** to drop (mouse, Space, ↑ or W work too). The pause button, P or Esc pause. No boost (the Boost button is hidden); the Hold sides / Tilt / Drag settings don't apply.
+- **Start**: the helicopter hovers with a pulsing "Hold to fly" prompt; nothing moves until the first touch.
+- **Physics** (`heli.js`, y up): `vy += (holding ? heliLift − heliGravity : −heliGravity) × dt`, clamped to ±`heliMaxVSpeed`; frame time capped by `maxFrameTime`. The nose pitches with `vy`, up to `heliPitchDeg`.
+- **Speed**: starts at `heliSpeed`, plus `heliSpeedPerLevel` per level, `heliSpeedRampPerSecond` within a level, `heliLapSpeedBonus` per lap, and an optional per-level `heli.speedBonus`.
+- **Screen**: best played sideways. A run asks the phone to turn to landscape (`screen.orientation.lock('landscape')`, works in the installed app; failure is ignored); the menu goes back to portrait. If the phone is still upright, a hint shows for 3 seconds: "Turn your phone sideways for a bigger view". Turning the phone mid-run resizes and auto-pauses. Pause, Game over and other overlays use a compact layout on short (landscape) screens.
+- **Camera**: the helicopter sits at `heliScreenX` (22%) from the left; scale = `min(width / (heliViewAhead / (1 − heliScreenX)), height / heliWorldHeight)`, so at least `heliViewAhead` units ahead and the whole cave height are always visible. In portrait the cave is a band across the middle and the space above/below is filled with rock. No up/down camera movement.
+- **The cave** (`caveSpawner.js`), built in columns `caveStep` wide:
+  1. The **open path** first: a wandering centerline with a clear corridor at least `heliMinGap` tall. `wander` (0–1) sets how much of the fairness limit it uses.
+  2. The **walls**: a smooth cave middle line, `opening` tall, that loosely follows the path; the corridor stays at least 0.3 inside the walls, so the path can swing toward one wall to leave room for an obstacle on the other side. Wall roughness (`roughness`) never cuts into the corridor, and both walls stay on screen.
+  3. **Obstacles**, which fill the space between corridor and wall and never enter the corridor (cut shorter to fit, skipped if that makes them shorter than their minimum):
+
+  | Pattern | What it looks like |
+  |---|---|
+  | `cave` | Floating rock blocks every `blockSpacing`, `blockMin`–`blockMax` tall; the path goes above or below each. |
+  | `spikes` | Rock spikes hanging from the ceiling and rising from the floor (`spikeChance` per column, `spikeMin`–`spikeMax` long). |
+  | `gates` | Full-height walls every `spacing` with one window `window` tall that moves up and down from gate to gate (if the path is sloping, the window is widened just enough to fit it). |
+  | `snake` | A narrow, tightly winding tunnel with no obstacles. |
+  | `mixed` | Cycles through a `sequence` every `segmentLength`. |
+
+  - **Gems** every `heliGemSpacing`, always on the open path: +`heliGemBonus` points, a chime, sparkle and floating "+25". Not solid.
+  - **Breathers**: around a level change the cave opens to at least the next level's `opening` + 2 with no obstacles (`heliBreatherBefore` / `heliBreatherAfter`), then the banner shows and colors cross-fade.
+  - New columns appear beyond the right edge of the screen; anything off the left edge is removed.
+- **Collision**: the hitbox is the body and skids (`heliWidth` × `heliHeight` × `heliHitboxScale`); the rotor blades don't count. Spikes collide as a strip 70% of their drawn width. Touching a column's ceiling or floor, a block, spike or gate wall is a crash (burst of bits in the ship color and orange, smoke, flash, shake, crash sound and buzz, game over after `gameOverDelayMs`).
+- **Score**: distance × `heliScorePerUnit` + gems × `heliGemBonus`. The level comes from distance (the shared `levelLength` in points), about 30–40 seconds per level. Separate best score/level; runs saved in the history as `mode: 'heli'`.
+- **Fairness** (tested): the path's slope never exceeds `caveSlopeFactor × heliMaxVSpeed ÷ topSpeed`, and its bend never exceeds `caveCurveFactor × (heliLift − heliGravity) ÷ topSpeed²`, where `topSpeed` is the fastest you can be going there (level + lap + full in-level ramp). The path limits look 40 units ahead so they tighten before a faster level starts.
+- **Autopilot** (`heli.js`): a pure function that decides "hold or not" from height, vertical speed and the path about 0.35 seconds ahead. It flies the menu preview and the fairness tests.
+- **Look** (`renderHeli.js`): cave air as a vertical gradient (`sky` → `skyHorizon` → `sky`), two parallax layers of distant rock in the `grid` color drifting at 0.2× and 0.45×; walls in `ground` with a darker rim and a soft highlight; obstacles in `cube`, lit from the upper left; an original helicopter design (rounded body in the `ship` color, glass bubble cockpit, tapering tail boom with fin, spinning tail rotor, two skids, a main rotor that stretches and shrinks to fake spinning with a motion-blur ellipse) that tilts with pitch and puffs grey exhaust smoke (`heliSmokePerSec`, more while holding). Night glows faintly, Storm flashes, Tilt tilts the view by half the level's roll.
 
 ## 5. How the 3D look works (rendering)
 
@@ -176,7 +213,7 @@ All numbers below are **starting values in `config.js`**, not fixed rules.
   - The neutral position is calibrated when a run starts, with a small dead zone so it doesn't drift.
   - Tilt data is used only in memory, never stored or sent.
 - **Drag**: steer toward where your finger is, relative to where it first touched.
-- **Keyboard** (for testing on a computer): ← → or A/D steer, ↑ or W boosts, space pauses.
+- **Keyboard** (for testing on a computer): ← → or A/D steer, ↑ or W boosts, space, P or Esc pause (in Helicopter mode Space lifts instead).
 
 ### Score and levels
 - The score increases with distance traveled in this run (starting at a later level starts the score at 0). The level depends on how far along the course you are.
@@ -230,6 +267,7 @@ Obstacles spawn in a band around the player's current `x` (the field is effectiv
 Each level entry includes:
 - `name`
 - `pattern` and pattern settings
+- `flight` (3D Flight obstacles) and `heli` (Helicopter cave, §4c)
 - a `palette`: `sky`, `skyHorizon`, `ground`, `cube`, `ship`, `grid` (optional) and `text`
 - optional `effects`: `roll`, `lightning`, `glow`
 
@@ -244,6 +282,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
   - A crash thud.
   - A tiny chime for "New best!".
   - 3D Flight: a bright "ding" through a bonus ring, a quiet "pew" for each shot, a "tink" when a shot hits a big drone's armor, and an explosion when a drone is destroyed (bigger for big drones).
+  - Helicopter: a soft, low, pulsing rotor hum while flying (a little higher while holding; stops when paused or after a crash) and a gem chime (the ring "ding", slightly higher).
 - Audio starts only after the first tap (browsers require this).
 - Vibration uses `navigator.vibrate`, only when it's enabled in settings: on a crash, and a tiny buzz for each drone destroyed.
 - Sound and vibration are skipped silently if the phone doesn't support them.
@@ -255,7 +294,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ### Manifest
 - `name: "Swerve"`, `short_name: "Swerve"`
 - `start_url: "./"`, `scope: "./"`
-- `display: "fullscreen"`, `orientation: "portrait"`
+- `display: "fullscreen"`, `orientation: "portrait"` (Helicopter runs ask for landscape while playing; the menus return to portrait)
 - Theme and background colors match the start screen.
 - Icons at 192 and 512, plus a 512 maskable icon. The icon is an original arrow-and-cubes design.
 - Generate PNG icons from `icons/icon.svg` with a one-off local script if needed. Commit the PNGs, but don't add the script's tools as project dependencies.
@@ -283,7 +322,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ## 10. Privacy (hard rules)
 
 - **No accounts, no server and no database.** The game runs entirely on the phone.
-- **The only stored data** is the best score and best level for each mode, settings (including the chosen start level, game mode, 3D up/down choice and 3D auto-fire on/off) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
+- **The only stored data** is the best score and best level for each mode (Classic, 3D Flight, Helicopter), settings (including the chosen start level, game mode, 3D up/down choice and 3D auto-fire on/off) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
 - **Nothing is ever sent anywhere.**
   - No analytics, ads, trackers or crash reporting.
   - No third-party scripts, fonts or CDNs.
@@ -308,6 +347,8 @@ These test the pure-logic modules.
   - for each pattern, with many seeds, generate 2 minutes of obstacles and confirm a passable gap of at least `minGapWidth` always exists;
   - no cube spawns closer than the fog distance.
 - **3D Flight fairness**: for every level's layout, with many seeds, sweep a grid of reachable (sideways, height) positions through the obstacles and confirm a `minGapWidth` × `minGapHeight` opening always exists. Drones count as solid boxes covering their full sway. Every bonus ring can be flown through.
+- **Helicopter fairness** (`heli-fairness.test.js`): for every level, laps 1–3 and 20 seeds, 2 minutes of cave: nothing enters the open corridor, the corridor is always at least `heliMinGap` tall, the path's slope and bend limits hold, every gem is in the corridor, and the autopilot survives with the real physics at 60 fps (and once with uneven frame times up to `maxFrameTime`).
+- **Helicopter** (`heli.test.js`): climb and drop, vertical speed clamp, speed by level/lap/within a level, crashes on the ceiling, floor, a block, spike and gate, rotor near-misses don't crash, gems count once, nothing moves before the first hold, frame-time cap.
 - **3D Flight**: climbing and the height limits, boost, crashing into blocks, rings giving bonus points, and shooting (fire rate, one-hit and three-hit drones, aim assist, walls stopping shots, flying into a drone crashes, drone sway stays in range).
 - **Levels**:
   - the correct level for a given score;
@@ -320,8 +361,9 @@ These test the pure-logic modules.
 - **Storage**:
   - defaults load correctly;
   - corrupted data resets safely;
-  - history, per-mode best scores and settings (including auto-fire) save and load.
-- **Config check**: every level has all required fields (Classic and 3D Flight), and all colors are valid.
+  - history, per-mode best scores and settings (including auto-fire) save and load;
+  - old v1.3 saves load and gain the Helicopter fields; Helicopter runs save, filter and rank separately.
+- **Config check**: every level has all required fields (Classic, 3D Flight and Helicopter, with every opening and window at least `heliMinGap`), and all colors are valid.
 - **App files**: every app file is in the service worker's precache list, and all paths are relative.
 
 ### Debug mode (hidden)
@@ -330,6 +372,8 @@ Opening the app with `?debug=1` at the end of the URL shows an overlay with:
 - hitboxes drawn as outlines;
 - an "invincible" toggle;
 - buttons to jump to any level.
+
+In Helicopter mode the hitbox view also shows the open path's centerline and corridor.
 
 It isn't linked from anywhere. It helps the owner preview new levels quickly.
 
@@ -365,3 +409,4 @@ It isn't linked from anywhere. It helps the owner preview new levels quickly.
 - Daily challenge with a fixed seed.
 - More levels and patterns, such as moving cubes and shrinking gaps.
 - 3D Flight: drones that shoot back (with a shield or health bar), and an optional hold-to-fire button instead of auto-fire.
+- **3D helicopter**: a helicopter version of 3D Flight — slower and floatier, able to hover and slip sideways, with spinning rotors and the same levels, possibly with drones to shoot. To be specced after the owner has tried the cave mode.

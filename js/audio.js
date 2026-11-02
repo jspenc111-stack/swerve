@@ -144,3 +144,70 @@ export function playBoom(big = false) {
     tone(t, 'sine', big ? 180 : 260, 50, big ? 0.45 : 0.25, big ? 0.6 : 0.4);
   } catch { /* ignore */ }
 }
+
+// Gem chime (Helicopter mode): the ring "ding", a little higher.
+export function playGem() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    tone(t, 'sine', 1397, 1397, 0.16, 0.2);
+    tone(t + 0.06, 'sine', 1865, 1865, 0.26, 0.18);
+  } catch { /* ignore */ }
+}
+
+// Helicopter rotor hum: a soft, low, pulsing hum while flying. Its pitch
+// rises a little while you hold. Call every frame; it only changes when needed.
+let hum = null;
+let humHolding = null;
+
+export function setRotorHum(on, holding = false) {
+  if (!on || !ready()) {
+    stopHum();
+    return;
+  }
+  try {
+    if (!hum) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = 62;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 280;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      gain.gain.setTargetAtTime(0.07, ctx.currentTime, 0.12);
+      // The "chop": a slow wobble in volume.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 13;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.035;
+      lfo.connect(depth).connect(gain.gain);
+      osc.connect(filter).connect(gain).connect(master);
+      osc.start();
+      lfo.start();
+      hum = { osc, lfo, gain };
+      humHolding = null;
+    }
+    if (holding !== humHolding) {
+      humHolding = holding;
+      const t = ctx.currentTime;
+      hum.osc.frequency.setTargetAtTime(holding ? 74 : 62, t, 0.1);
+      hum.lfo.frequency.setTargetAtTime(holding ? 16 : 13, t, 0.1);
+    }
+  } catch {
+    hum = null;
+  }
+}
+
+function stopHum() {
+  if (!hum) return;
+  const h = hum;
+  hum = null;
+  try {
+    const t = ctx.currentTime;
+    h.gain.gain.cancelScheduledValues(t);
+    h.gain.gain.setTargetAtTime(0.0001, t, 0.05);
+    h.osc.stop(t + 0.3);
+    h.lfo.stop(t + 0.3);
+  } catch { /* ignore */ }
+}

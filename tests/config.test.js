@@ -137,3 +137,47 @@ test('tuning numbers are sensible', () => {
   assert.ok(CONFIG.laneLeash < CONFIG.spawnBandHalfWidth);
   assert.ok(CONFIG.cameraHeight > CONFIG.cubeSize, 'camera must see the cube tops');
 });
+
+const HELI = ['cave', 'spikes', 'gates', 'snake', 'mixed'];
+function checkHeli(p, where) {
+  assert.ok(p && typeof p === 'object', `${where}: heli pattern missing`);
+  assert.ok(HELI.includes(p.type), `${where}: unknown heli pattern "${p.type}"`);
+  const num = (k, min = 0) => {
+    assert.equal(typeof p[k], 'number', `${where}: ${k} must be a number`);
+    assert.ok(p[k] >= min, `${where}: ${k} too small`);
+  };
+  if (p.speedBonus !== undefined) num('speedBonus');
+  if (p.type === 'mixed') {
+    num('segmentLength', 20);
+    assert.ok(Array.isArray(p.sequence) && p.sequence.length > 0, `${where}: sequence must be a list`);
+    p.sequence.forEach((q, i) => {
+      assert.notEqual(q.type, 'mixed', `${where}: mixed can't contain mixed`);
+      checkHeli(q, `${where} sequence[${i}]`);
+    });
+    return;
+  }
+  num('opening', CONFIG.heliMinGap);
+  // Room for the opening (plus the wider breather) with both walls on screen.
+  assert.ok(p.opening + 2 <= CONFIG.heliWorldHeight - 2, `${where}: opening too big for the screen`);
+  num('wander'); assert.ok(p.wander <= 1, `${where}: wander must be 0–1`);
+  num('roughness'); assert.ok(p.roughness <= 1, `${where}: roughness must be 0–1`);
+  switch (p.type) {
+    case 'cave': num('blockSpacing', 4); num('blockMin', 0.5); num('blockMax', p.blockMin); break;
+    case 'spikes':
+      num('spikeChance'); assert.ok(p.spikeChance <= 1, `${where}: spikeChance must be 0–1`);
+      num('spikeMin', 0.5); num('spikeMax', p.spikeMin); break;
+    case 'gates': num('spacing', 4); num('window', CONFIG.heliMinGap); break;
+  }
+}
+
+test('every level has a valid Helicopter cave', () => {
+  LEVELS.forEach((level, i) => checkHeli(level.heli, `level ${i + 1}`));
+  assert.ok(CONFIG.heliLift > CONFIG.heliGravity, 'holding must make you climb');
+  assert.ok(CONFIG.heliMinGap >= CONFIG.heliHeight * 2.5, 'heliMinGap must be at least 2.5× the helicopter height');
+  assert.ok(CONFIG.heliHitboxScale > 0 && CONFIG.heliHitboxScale <= 1);
+  assert.ok(CONFIG.heliScreenX > 0 && CONFIG.heliScreenX < 0.5);
+  assert.ok(CONFIG.caveSlopeFactor > 0 && CONFIG.caveSlopeFactor <= 1);
+  assert.ok(CONFIG.caveCurveFactor > 0 && CONFIG.caveCurveFactor <= 1);
+  assert.ok(CONFIG.caveStep > 0 && CONFIG.caveStep <= 1);
+  assert.ok(CONFIG.heliGemSpacing > 0);
+});

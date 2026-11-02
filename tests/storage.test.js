@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn,
+  bestScoreOf, runsIn, resetBests, GAME_MODES,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -183,4 +183,69 @@ test('the 3D auto-fire setting saves, and defaults to on', () => {
   assert.equal(loadSave(store).settings.autoFire, false);
   const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { autoFire: 'yes' } }) }));
   assert.equal(bad.settings.autoFire, true);
+});
+
+// ---- Helicopter mode (v1.4) ----
+
+test('an old v1.3 save loads unchanged and gains the Helicopter fields', () => {
+  const old = {
+    bestScore: 1200, bestLevel: 4, flightBestScore: 800, flightBestLevel: 3,
+    settings: { controls: 'drag', sound: false, vibration: true, startLevel: 2, mode: 'flight', invertY: true, autoFire: false },
+    history: [
+      { score: 1200, level: 4, startLevel: 1, at: 2000, mode: 'classic' },
+      { score: 800, level: 3, startLevel: 1, at: 1000, mode: 'flight' },
+    ],
+  };
+  const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify(old) }));
+  assert.equal(loaded.heliBestScore, 0);
+  assert.equal(loaded.heliBestLevel, 1);
+  for (const [k, v] of Object.entries(old)) assert.deepEqual(loaded[k], v, k);
+});
+
+test('Helicopter runs save, filter and rank separately', () => {
+  const store = memoryStorage();
+  const s = defaultSave();
+  assert.deepEqual(GAME_MODES, ['classic', 'flight', 'heli']);
+  recordRun(s, 900, 3, 1, 100, 100, 'classic');
+  assert.equal(recordRun(s, 400, 2, 1, 200, 100, 'heli'), true);
+  assert.equal(recordRun(s, 300, 1, 1, 300, 100, 'heli'), false);
+  assert.equal(recordRun(s, 650, 4, 2, 400, 100, 'heli'), true);
+  assert.equal(s.heliBestScore, 650);
+  assert.equal(s.heliBestLevel, 4);
+  assert.equal(s.bestScore, 900, 'Classic best untouched');
+  assert.equal(s.flightBestScore, 0, '3D best untouched');
+  assert.equal(bestScoreOf(s, 'heli'), 650);
+  assert.equal(runsIn(s, 'heli'), 3);
+  assert.equal(rankOf(s, 500, 'heli'), 2);
+  assert.equal(rankOf(s, 500, 'classic'), 2);
+  assert.deepEqual(sortedHistory(s, 'top', 'heli').map((r) => r.score), [650, 400, 300]);
+  assert.ok(sortedHistory(s, 'recent', 'heli').every((r) => r.mode === 'heli'));
+  writeSave(s, store);
+  const back = loadSave(store);
+  assert.equal(back.heliBestScore, 650);
+  assert.equal(back.heliBestLevel, 4);
+  assert.deepEqual(sortedHistory(back, 'top', 'heli').map((r) => r.score), [650, 400, 300]);
+  assert.deepEqual(Object.keys(store.data), ['swerve:v1']);
+});
+
+test("settings.mode = 'heli' round-trips", () => {
+  const store = memoryStorage();
+  const s = defaultSave();
+  s.settings.mode = 'heli';
+  writeSave(s, store);
+  assert.equal(loadSave(store).settings.mode, 'heli');
+  assert.deepEqual(loadSave(store), s);
+});
+
+test('resetting best scores resets every mode and keeps the history', () => {
+  const s = defaultSave();
+  recordRun(s, 100, 2, 1, 1, 100, 'classic');
+  recordRun(s, 200, 3, 1, 2, 100, 'flight');
+  recordRun(s, 300, 4, 1, 3, 100, 'heli');
+  resetBests(s);
+  const fresh = defaultSave();
+  for (const k of ['bestScore', 'bestLevel', 'flightBestScore', 'flightBestLevel', 'heliBestScore', 'heliBestLevel']) {
+    assert.equal(s[k], fresh[k], k);
+  }
+  assert.equal(s.history.length, 3);
 });
