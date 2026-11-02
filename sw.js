@@ -26,6 +26,8 @@ const PRECACHE = [
   './js/game.js',
   './js/flight.js',
   './js/flightSpawner.js',
+  './js/heli.js',
+  './js/caveSpawner.js',
   './js/render3d.js',
   './js/levels.js',
   './js/spawner.js',
