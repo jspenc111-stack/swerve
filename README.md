@@ -1,6 +1,6 @@
 # Swerve
 
-A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes. It speeds up, and every level changes the colors and the obstacles.
+A personal arcade game for my phone: steer a little arrow across an endless field and swerve around cubes, or switch to 3D Flight to fly a jet up, down and around obstacles and shoot drones. It speeds up, and every level changes the colors and the obstacles.
 
 It's a **PWA** (a web page that installs like an app and works offline) hosted on **GitHub Pages** (GitHub's free website hosting).
 
@@ -19,7 +19,9 @@ Open the game's web address in Chrome on the phone. It ends in `.github.io/swerv
 There are two modes, chosen at the top of the menu:
 
 - **Classic**: steer left and right around cubes.
-- **3D Flight**: fly a jet up, down and around floating blocks, towers, walls with windows and tunnels. Put your thumb anywhere and drag like a joystick (or tilt the phone, if you chose Tilt in Settings). Fly through the gold rings for bonus points. The bar on the right shows your height. Settings has an option to invert up/down, like a plane.
+- **3D Flight**: fly a jet up, down and around floating blocks, towers, walls with windows and tunnels. Put your thumb anywhere and drag like a joystick (or tilt the phone, if you chose Tilt in Settings). The bar on the right shows your height. Settings has an option to invert up/down, like a plane.
+  - **Shooting:** your guns fire by themselves. Line up the reticle (the small circle ahead of the jet) with the glowing drones to blast them: small pink ones are worth 50 points, big orange armored ones take 3 hits and are worth 150. Don't fly into them! Auto-fire can be turned off in Settings.
+  - Fly through the gold rings for bonus points.
 
 In both modes:
 

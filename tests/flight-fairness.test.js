@@ -37,11 +37,17 @@ const PATTERNS = {
 
 const levelWith = (flight) => [{ name: 'Test', pattern: LEVELS[0].pattern, flight, palette: LEVELS[0].palette }];
 
+// A drone as a solid box covering its whole side-to-side sway.
+const droneBox = (t) => ({ x: t.x0, y: t.y - t.size / 2, z: t.z, w: t.size + 2 * t.amp, h: t.size, d: t.size });
+
 // Run the spawner as the game does, with the player holding still at (0, py).
+// Drones count as solid obstacles.
 function generate(levels, seed, speed, py) {
   const sp = createFlightSpawner(CONFIG, levels, seed);
   const boxes = [];
   const rings = [];
+  const seenTargets = new Set();
+  const targets = [];
   let z = 0;
   let tooClose = 0;
   for (let i = 0; i < SECONDS * FPS; i++) {
@@ -53,8 +59,17 @@ function generate(levels, seed, speed, py) {
       boxes.push({ ...b });
     }
     for (let k = sp.rings.length - sp.lastRings; k < sp.rings.length; k++) rings.push({ ...sp.rings[k] });
+    for (const t of sp.targets) {
+      if (seenTargets.has(t)) continue;
+      seenTargets.add(t);
+      if (t.z - t.size / 2 < z + CONFIG.fogDistance - 1e-9) tooClose++;
+      targets.push(t);
+    }
   }
-  return { boxes, rings, endZ: z, tooClose, maxSpeed: speed };
+  // A later block can remove a drone placed just before it: those never existed.
+  const live = targets.filter((t) => !t.removed);
+  for (const t of live) boxes.push(droneBox(t));
+  return { boxes, rings, targets: live, endZ: z, tooClose, maxSpeed: speed };
 }
 
 function checkPassable({ boxes, endZ, maxSpeed }) {
@@ -140,10 +155,12 @@ for (const [name, pattern] of Object.entries(PATTERNS)) {
     test(`3D fairness: ${name} at speed ${speed.toFixed(0)} always leaves a way through`, () => {
       const levels = levelWith(pattern);
       let boxesSeen = 0;
+      let targetsSeen = 0;
       for (let seed = 1; seed <= SEEDS; seed++) {
         const py = seed % 2 ? CONFIG.flightStartAltitude : 7;
         const run = generate(levels, seed * 9173, speed, py);
         boxesSeen += run.boxes.length;
+        targetsSeen += run.targets.length;
         assert.equal(run.tooClose, 0, `seed ${seed}: an obstacle appeared closer than the fog distance`);
         const result = checkPassable(run);
         assert.ok(result.ok, `seed ${seed}: blocked at z=${result.z?.toFixed(1)} (${result.why})`);
@@ -155,6 +172,7 @@ for (const [name, pattern] of Object.entries(PATTERNS)) {
         }
       }
       assert.ok(boxesSeen > SEEDS * 20, 'the layout should actually place obstacles');
+      if (pattern.type !== 'frames' || pattern.spacing > 4) assert.ok(targetsSeen > 0, 'some drones to shoot');
     });
   }
 }
@@ -165,6 +183,8 @@ test('3D fairness: real play from every start level, boost on and off', () => {
     f.invincible = true;
     resetFlight(f, 60 + start, start);
     const boxes = [];
+    const seen = new Set();
+    const drones = [];
     let maxSpeed = 0;
     let boosting = false;
     const end = f.distance + (CONFIG.levelLength / CONFIG.scorePerUnit) * 0.8;
@@ -177,7 +197,14 @@ test('3D fairness: real play from every start level, boost on and off', () => {
         const b = sp.boxes[k];
         boxes.push({ ...b, z: b.z - f.startDistance });
       }
+      for (const t of sp.targets) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        drones.push(t);
+      }
     }
+    // Drones that a later block removed never existed in the game.
+    for (const t of drones) if (!t.removed) boxes.push({ ...droneBox(t), z: t.z - f.startDistance });
     const result = checkPassable({ boxes, endZ: f.distance - f.startDistance, maxSpeed });
     assert.ok(result.ok, `start level ${start + 1} (${LEVELS[start].name}): blocked at z=${result.z?.toFixed(1)} (${result.why})`);
   }

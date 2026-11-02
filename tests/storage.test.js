@@ -173,3 +173,14 @@ test('each game mode keeps its own best score, and history remembers the mode', 
   assert.equal(bad.settings.invertY, false);
   assert.equal(bad.flightBestScore, 0);
 });
+
+test('the 3D auto-fire setting saves, and defaults to on', () => {
+  assert.equal(defaultSave().settings.autoFire, true);
+  const store = memoryStorage();
+  const s = defaultSave();
+  s.settings.autoFire = false;
+  writeSave(s, store);
+  assert.equal(loadSave(store).settings.autoFire, false);
+  const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { autoFire: 'yes' } }) }));
+  assert.equal(bad.settings.autoFire, true);
+});
