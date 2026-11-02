@@ -420,7 +420,7 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
   const discAlpha = Math.max(0, Math.min(1, (look.rotorRate - 5) / 4)) * 0.16;
   if (discAlpha > 0.005) {
     ctx.globalAlpha = discAlpha;
-    ctx.fillStyle = '#20242a';
+    ctx.fillStyle = '#9aa3ad';
     ctx.beginPath();
     for (let i = 0; i < 24; i++) {
       discPt(ROTOR_R, (i / 24) * Math.PI * 2, 0, W2);
@@ -431,13 +431,16 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
     ctx.globalAlpha = 1;
   }
   // Blades (slightly see-through when spinning fast, like motion blur).
+  // Mid-grey with a light edge, so they show on light and dark skies.
   ctx.globalAlpha = 1 - Math.max(0, Math.min(0.45, (look.rotorRate - 4) * 0.08));
-  ctx.fillStyle = '#2a2e35';
+  ctx.fillStyle = '#5d646f';
+  ctx.strokeStyle = 'rgba(235,240,245,0.55)';
+  ctx.lineWidth = 1;
   for (let b = 0; b < 4; b++) {
     const a = look.rotorAngle + (b * Math.PI) / 2;
     discPt(0.1, a, -0.05, A); discPt(ROTOR_R, a, -0.045, B); discPt(ROTOR_R, a, 0.045, C); discPt(0.1, a, 0.05, D);
     ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(C.x, C.y); ctx.lineTo(D.x, D.y);
-    ctx.closePath(); ctx.fill();
+    ctx.closePath(); ctx.fill(); ctx.stroke();
   }
   ctx.globalAlpha = 1;
   // Hub.

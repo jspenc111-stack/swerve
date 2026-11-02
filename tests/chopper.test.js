@@ -408,3 +408,79 @@ test('keyboard: W/S move the lever (it stays), arrows work the cyclic', () => {
   resetChopperControls(cc);
   assert.equal(cc.lever, 0);
 });
+
+// ---- Storage: new 3D Heli fields ----
+
+import {
+  loadSave, writeSave, recordRun, defaultSave, GAME_MODES, bestScoreOf, rankOf, runsIn, sortedHistory,
+  resetBests, collectiveSideOf, seenChopperTipsOf,
+} from '../js/storage.js';
+
+function memoryStorage(initial = {}) {
+  const data = { ...initial };
+  return { data, getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } };
+}
+
+test('storage: 3D Heli fields default', () => {
+  const s = defaultSave();
+  assert.ok(GAME_MODES.includes('chopper'));
+  assert.equal(s.chopperBestScore, 0);
+  assert.equal(s.chopperBestLevel, 1);
+  assert.equal(collectiveSideOf(s), 'left');
+  assert.equal(seenChopperTipsOf(s), false);
+});
+
+test('storage: 3D Heli runs, bests and settings round-trip', () => {
+  const store = memoryStorage();
+  const s = defaultSave();
+  recordRun(s, 900, 3, 1, 100, 100, 'heli');
+  assert.equal(recordRun(s, 1240, 4, 2, 200, 100, 'chopper'), true);
+  assert.equal(recordRun(s, 800, 2, 1, 300, 100, 'chopper'), false);
+  s.settings.mode = 'chopper';
+  s.settings.collectiveSide = 'right';
+  s.settings.seenChopperTips = true;
+  writeSave(s, store);
+  const back = loadSave(store);
+  assert.deepEqual(back, s);
+  assert.equal(back.chopperBestScore, 1240);
+  assert.equal(back.chopperBestLevel, 4);
+  assert.equal(bestScoreOf(back, 'chopper'), 1240);
+  assert.equal(back.heliBestScore, 900, 'Helicopter best untouched');
+  assert.equal(back.settings.mode, 'chopper');
+  assert.equal(collectiveSideOf(back), 'right');
+  assert.equal(seenChopperTipsOf(back), true);
+  assert.equal(runsIn(back, 'chopper'), 2);
+  assert.equal(rankOf(back, 1000, 'chopper'), 2);
+  assert.deepEqual(sortedHistory(back, 'top', 'chopper').map((r) => r.score), [1240, 800]);
+  assert.ok(sortedHistory(back, 'recent', 'chopper').every((r) => r.mode === 'chopper'));
+  assert.deepEqual(Object.keys(store.data), ['swerve:v1'], 'still only the one key');
+  resetBests(back);
+  assert.equal(back.chopperBestScore, 0);
+  assert.equal(back.chopperBestLevel, 1);
+  // Bad values fall back to defaults.
+  const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({
+    chopperBestScore: -3, chopperBestLevel: 'x', settings: { seenChopperTips: 'yes', collectiveSide: 'up', mode: 'chopper' },
+  }) }));
+  assert.equal(bad.chopperBestScore, 0);
+  assert.equal(bad.chopperBestLevel, 1);
+  assert.equal(seenChopperTipsOf(bad), false);
+  assert.equal(collectiveSideOf(bad), 'left');
+  assert.equal(bad.settings.mode, 'chopper');
+});
+
+test('storage: an old v1.4 save loads unchanged and gains the 3D Heli fields', () => {
+  const old = {
+    bestScore: 1200, bestLevel: 4, flightBestScore: 800, flightBestLevel: 3, heliBestScore: 640, heliBestLevel: 2,
+    settings: { controls: 'tilt', sound: true, vibration: false, startLevel: 3, mode: 'heli', invertY: false, autoFire: true },
+    history: [
+      { score: 640, level: 2, startLevel: 1, at: 3000, mode: 'heli' },
+      { score: 1200, level: 4, startLevel: 1, at: 2000, mode: 'classic' },
+    ],
+  };
+  const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify(old) }));
+  for (const [k, v] of Object.entries(old)) assert.deepEqual(loaded[k], v, k);
+  assert.equal(loaded.chopperBestScore, 0);
+  assert.equal(loaded.chopperBestLevel, 1);
+  assert.equal(collectiveSideOf(loaded), 'left');
+  assert.equal(seenChopperTipsOf(loaded), false);
+});

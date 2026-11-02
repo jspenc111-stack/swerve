@@ -366,7 +366,7 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 .help .warn { color: #ffcf9f; font-size: 14px; }
 
 /* ---- Game mode switch (start screen) ---- */
-.mode-switch { display: flex; gap: 8px; }
+.mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mode-btn {
   flex: 1;
   min-height: 60px;
@@ -456,6 +456,7 @@ h2 { margin: 0 0 4px; font-size: 30px; }
   left: calc(14px + var(--safe-left));
   top: calc(14px + var(--safe-top));
   height: 22%;
+  gap: 10px;
 }
 
 /* ---- Helicopter mode: "Hold to fly" prompt and "turn sideways" hint ---- */
@@ -495,7 +496,7 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 }
 .settings-note { text-align: left; margin-top: -4px; }
 
-/* Three mode buttons side by side: let the subtitles wrap on narrow phones. */
+/* Mode buttons in a 2×2 grid: let the subtitles wrap on narrow phones. */
 .mode-btn { padding: 6px 4px; min-width: 0; line-height: 1.15; }
 .mode-btn small { line-height: 1.15; }
 @media (max-width: 380px) {
@@ -518,4 +519,37 @@ h2 { margin: 0 0 4px; font-size: 30px; }
   .heli-hold { top: 62%; font-size: 26px; }
   .banner { top: 20%; font-size: 24px; }
   .hud-score { font-size: 32px; }
+}
+
+/* ---- 3D Heli tips cards ---- */
+.tips .tip-card {
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+.tips .tip-card p { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35; }
+.tip-icon { font-size: 34px; line-height: 1; color: var(--accent); }
+.tip-dots { display: flex; justify-content: center; gap: 8px; }
+.tip-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); }
+.tip-dots span.on { background: var(--accent); }
+
+/* Debug panel in 3D Heli: up top in the middle, so both thumb zones stay free. */
+.debug.debug-top {
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  top: calc(96px + var(--safe-top));
+  transform: translateX(-50%);
+  max-width: 56vw;
+  padding: 6px;
+  gap: 4px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.55);
 }

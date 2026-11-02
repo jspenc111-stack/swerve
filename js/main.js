@@ -28,7 +28,7 @@ import {
 } from './input.js';
 import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, collectiveSideOf,
+  bestScoreOf, runsIn, resetBests, collectiveSideOf, seenChopperTipsOf,
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
@@ -71,9 +71,10 @@ const screens = {
   settings: $('screen-settings'),
   history: $('screen-history'),
   install: $('screen-install'),
+  tips: $('screen-tips'),
 };
 
-// menu | playing | paused | crashing | over | settings | history | install
+// menu | playing | paused | crashing | over | settings | history | install | tips
 let mode = 'menu';
 let lastTime = 0;
 let crashAt = 0;
@@ -311,6 +312,7 @@ function renderModeSwitch() {
   input.heliMode = gameMode === 'heli';
   input.chopperMode = gameMode === 'chopper';
   $('start-howto').textContent = howto();
+  $('btn-tips').classList.toggle('hidden', gameMode !== 'chopper');
 }
 
 function setGameMode(m) {
@@ -332,6 +334,11 @@ function startLevelIndex() {
 
 function startRun() {
   unlockAudio();
+  // Before the first-ever 3D Heli run: three quick tips.
+  if (gameMode === 'chopper' && !seenChopperTipsOf(save)) {
+    openTips(true);
+    return;
+  }
   if (save.settings.controls === 'tilt') requestTiltPermission();
   resetCurrent();
   clearInput(input);
@@ -348,6 +355,44 @@ function startRun() {
   keepAwake(true);
   if (gameMode === 'heli') startHeliRun();
   if (gameMode === 'chopper') startSidewaysRun();
+}
+
+// ---- 3D Heli tips cards -----------------------------------------------------------
+
+let tipIndex = 0;
+let tipsThenPlay = false;
+const TIP_COUNT = 3;
+
+function openTips(thenPlay) {
+  mode = 'tips';
+  tipsThenPlay = thenPlay;
+  tipIndex = 0;
+  renderTips();
+  showScreen('tips');
+}
+
+function renderTips() {
+  for (const card of document.querySelectorAll('[data-tip]')) {
+    card.classList.toggle('hidden', Number(card.dataset.tip) !== tipIndex);
+  }
+  document.querySelectorAll('.tip-dots span').forEach((d, i) => d.classList.toggle('on', i === tipIndex));
+  $('btn-tip-next').textContent = tipIndex === TIP_COUNT - 1 ? 'Got it' : 'Next';
+}
+
+function nextTip() {
+  if (tipIndex < TIP_COUNT - 1) {
+    tipIndex++;
+    renderTips();
+    return;
+  }
+  save.settings.seenChopperTips = true;
+  writeSave(save);
+  if (tipsThenPlay) {
+    startRun();
+  } else {
+    mode = 'menu';
+    showScreen('start');
+  }
 }
 
 function pause() {
@@ -411,13 +456,15 @@ function showGameOver() {
     (startNumber > 1 ? ` (started at ${startNumber})` : '') +
     (gameMode === 'flight' && flight.rings > 0 ? ` · ${flight.rings} ring${flight.rings === 1 ? '' : 's'}` : '') +
     (gameMode === 'flight' && flight.kills > 0 ? ` · ${flight.kills} drone${flight.kills === 1 ? '' : 's'}` : '') +
-    (gameMode === 'heli' && heli.gems > 0 ? ` · ${heli.gems} gem${heli.gems === 1 ? '' : 's'}` : '');
+    (gameMode === 'heli' && heli.gems > 0 ? ` · ${heli.gems} gem${heli.gems === 1 ? '' : 's'}` : '') +
+    (gameMode === 'chopper' && chopper.rings > 0 ? ` · ${chopper.rings} ring${chopper.rings === 1 ? '' : 's'}` : '') +
+    (gameMode === 'chopper' ? ` · top ×${chopper.topMultiplier.toFixed(1)}` : '');
   // "Your #3 score" for a good run that isn't a new best (within this mode).
   const rank = rankOf(save, g.score, gameMode);
   const runs = runsIn(save, gameMode);
   const rankEl = $('over-rank');
   rankEl.classList.toggle('hidden', newBest || g.score === 0 || rank > 10 || runs < 3);
-  const modeWord = gameMode === 'flight' ? '3D ' : gameMode === 'heli' ? 'Helicopter ' : '';
+  const modeWord = { flight: '3D ', heli: 'Helicopter ', chopper: '3D Heli ' }[gameMode] || '';
   rankEl.textContent = `Your #${rank} ${modeWord}score out of ${runs} runs`;
   const nb = $('over-newbest');
   nb.classList.add('hidden');
@@ -838,7 +885,7 @@ function registerServiceWorker() {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController || reloadPending) return; // first install: nothing to reload
     reloadPending = true;
-    if (mode === 'menu' || mode === 'settings' || mode === 'history' || mode === 'install') location.reload();
+    if (mode === 'menu' || mode === 'settings' || mode === 'history' || mode === 'install' || mode === 'tips') location.reload();
   });
   navigator.serviceWorker.register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`)
     .then((reg) => {
@@ -858,6 +905,7 @@ const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 let fpsFrames = 0;
 let fpsSince = 0;
 let fpsEl = null;
+let chopperDebugEl = null;
 
 function setupDebug() {
   const panel = $('debug');
@@ -869,6 +917,8 @@ function setupDebug() {
     return el;
   };
   fpsEl = make('div', 'FPS –', panel);
+  chopperDebugEl = make('div', '', panel);
+  view.path = true; // 3D Heli: show the always-open path
   const toggles = make('div', '', panel);
   toggles.className = 'row';
   const inv = make('button', 'Invincible', toggles);
@@ -907,6 +957,16 @@ function debugJump(index) {
 
 function updateFps(now) {
   fpsFrames++;
+  if (chopperDebugEl) {
+    const on = gameMode === 'chopper';
+    chopperDebugEl.classList.toggle('hidden', !on);
+    $('debug').classList.toggle('debug-top', on && mode !== 'menu');
+    if (on && fpsFrames % 6 === 0) {
+      const c = chopper;
+      chopperDebugEl.textContent = `lever ${c.lever.toFixed(2)} · stick ${c.stickX.toFixed(2)},${c.stickY.toFixed(2)}` +
+        ` · ×${c.multiplier.toFixed(2)} · speed ${c.speed.toFixed(1)}/${c.topSpeed.toFixed(1)} · alt ${c.y.toFixed(1)}`;
+    }
+  }
   if (now - fpsSince >= 500) {
     const count = gameMode === 'flight' ? flight.spawner.boxes.length
       : gameMode === 'chopper' ? chopper.spawner.boxes.length
@@ -920,6 +980,8 @@ function updateFps(now) {
 // ---- Wire everything up ------------------------------------------------------------
 
 $('btn-play').addEventListener('click', startRun);
+$('btn-tips').addEventListener('click', () => openTips(false));
+$('btn-tip-next').addEventListener('click', nextTip);
 $('btn-again').addEventListener('click', startRun);
 $('btn-menu').addEventListener('click', toMenu);
 $('btn-pause').addEventListener('click', pause);

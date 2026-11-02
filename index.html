@@ -52,12 +52,14 @@
         <button class="mode-btn" data-mode="classic" role="radio">Classic<small>Steer left &amp; right</small></button>
         <button class="mode-btn" data-mode="flight" role="radio">3D Flight<small>Fly up, down &amp; around</small></button>
         <button class="mode-btn" data-mode="heli" role="radio">Helicopter<small>Hold to fly up</small></button>
+        <button class="mode-btn" data-mode="chopper" role="radio">3D Heli<small>Two-thumb chopper</small></button>
       </div>
       <p class="best">Best: <span id="start-best">0</span></p>
       <p class="label">Start at level</p>
       <div id="level-picker" class="level-picker" role="radiogroup" aria-label="Start at level"></div>
       <button id="btn-play" class="big-btn">Play</button>
       <p class="howto" id="start-howto">Hold left or right side to steer.</p>
+      <button id="btn-tips" class="link-btn hidden" aria-label="How to fly 3D Heli">? How to fly</button>
       <div class="row-btns">
         <button id="btn-history" class="mid-btn">History</button>
         <button id="btn-install" class="mid-btn hidden">Install app</button>
@@ -66,6 +68,27 @@
       <button id="btn-settings" class="icon-btn settings-btn" aria-label="Settings">⚙︎</button>
     </div>
     <div class="version" id="version"></div>
+  </section>
+
+  <!-- 3D Heli: quick tips (before the first-ever run, or from the ? button) -->
+  <section id="screen-tips" class="screen hidden">
+    <div class="panel tips">
+      <h2>3D Heli</h2>
+      <div class="tip-card" data-tip="0">
+        <div class="tip-icon" aria-hidden="true">⇕</div>
+        <p>Left thumb: lift. Slide up to climb. It stays where you leave it.</p>
+      </div>
+      <div class="tip-card hidden" data-tip="1">
+        <div class="tip-icon" aria-hidden="true">⊖</div>
+        <p>Find the HOVER mark to hold your height.</p>
+      </div>
+      <div class="tip-card hidden" data-tip="2">
+        <div class="tip-icon" aria-hidden="true">✥</div>
+        <p>Right thumb: push forward to fly, sideways to slide. Faster = up to ×2 points.</p>
+      </div>
+      <div class="tip-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      <button id="btn-tip-next" class="big-btn">Next</button>
+    </div>
   </section>
 
   <!-- Paused -->
@@ -127,6 +150,7 @@
         <button class="choice-btn" data-hmode="classic" role="radio">Classic</button>
         <button class="choice-btn" data-hmode="flight" role="radio">3D Flight</button>
         <button class="choice-btn" data-hmode="heli" role="radio">Helicopter</button>
+        <button class="choice-btn" data-hmode="chopper" role="radio">3D Heli</button>
       </div>
       <div class="choice" role="radiogroup" aria-label="Sort">
         <button class="choice-btn" data-order="recent" role="radio">Recent</button>

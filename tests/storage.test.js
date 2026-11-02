@@ -205,7 +205,7 @@ test('an old v1.3 save loads unchanged and gains the Helicopter fields', () => {
 test('Helicopter runs save, filter and rank separately', () => {
   const store = memoryStorage();
   const s = defaultSave();
-  assert.deepEqual(GAME_MODES, ['classic', 'flight', 'heli']);
+  assert.deepEqual(GAME_MODES, ['classic', 'flight', 'heli', 'chopper']); // v1.5 added 3D Heli
   recordRun(s, 900, 3, 1, 100, 100, 'classic');
   assert.equal(recordRun(s, 400, 2, 1, 200, 100, 'heli'), true);
   assert.equal(recordRun(s, 300, 1, 1, 300, 100, 'heli'), false);

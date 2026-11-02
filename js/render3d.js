@@ -757,7 +757,7 @@ export function collectiveSlider(r, side, out = {}) {
   out.x = side === 'right' ? r.w - margin : margin;
   const len = r.h * 0.6;
   out.top = r.h * 0.3;
-  out.bottom = Math.min(r.h - 24, out.top + len);
+  out.bottom = Math.min(r.h - 34, out.top + len);
   return out;
 }
 
@@ -814,9 +814,9 @@ export function drawChopperControls(r, cc, hover, leverHeld, stick) {
   ctx.textBaseline = 'top';
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 3;
-  ctx.strokeText('LIFT', s.x, s.bottom + 10);
+  ctx.strokeText('LIFT', s.x, s.bottom + 16);
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('LIFT', s.x, s.bottom + 10);
+  ctx.fillText('LIFT', s.x, s.bottom + 16);
   ctx.restore();
 
   // The cyclic: the floating joystick, or a faint ring where it would go.

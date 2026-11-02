@@ -5,7 +5,7 @@
 
 export const STORAGE_KEY = 'swerve:v1';
 export const CONTROL_MODES = ['sides', 'tilt', 'drag'];
-export const GAME_MODES = ['classic', 'flight', 'heli'];
+export const GAME_MODES = ['classic', 'flight', 'heli', 'chopper'];
 export const DEFAULT_HISTORY_MAX = 100;
 export const COLLECTIVE_SIDES = ['left', 'right'];
 
@@ -17,6 +17,8 @@ export function defaultSave() {
     flightBestLevel: 1,
     heliBestScore: 0,      // Helicopter
     heliBestLevel: 1,
+    chopperBestScore: 0,   // 3D Heli
+    chopperBestLevel: 1,
     settings: {
       controls: 'sides', sound: true, vibration: true, startLevel: 1,
       mode: 'classic', invertY: false, autoFire: true,
@@ -40,7 +42,7 @@ const isCount = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const isLevel = (n) => isCount(n) && n >= 1;
 
 // One past run: { score, level (reached), startLevel, at (time, ms since 1970),
-// mode ('classic', 'flight' or 'heli') }.
+// mode ('classic', 'flight', 'heli' or 'chopper') }.
 function cleanRun(run) {
   if (!run || typeof run !== 'object') return null;
   if (!isCount(run.score) || !isLevel(run.level) || !isCount(run.at)) return null;
@@ -70,6 +72,8 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
   if (isLevel(raw.flightBestLevel)) save.flightBestLevel = Math.floor(raw.flightBestLevel);
   if (isCount(raw.heliBestScore)) save.heliBestScore = Math.floor(raw.heliBestScore);
   if (isLevel(raw.heliBestLevel)) save.heliBestLevel = Math.floor(raw.heliBestLevel);
+  if (isCount(raw.chopperBestScore)) save.chopperBestScore = Math.floor(raw.chopperBestScore);
+  if (isLevel(raw.chopperBestLevel)) save.chopperBestLevel = Math.floor(raw.chopperBestLevel);
   const s = raw.settings;
   if (s && typeof s === 'object') {
     if (CONTROL_MODES.includes(s.controls)) save.settings.controls = s.controls;
@@ -80,6 +84,7 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
     if (typeof s.invertY === 'boolean') save.settings.invertY = s.invertY;
     if (typeof s.autoFire === 'boolean') save.settings.autoFire = s.autoFire;
     if (COLLECTIVE_SIDES.includes(s.collectiveSide)) save.settings.collectiveSide = s.collectiveSide;
+    if (typeof s.seenChopperTips === 'boolean') save.settings.seenChopperTips = s.seenChopperTips;
   }
   if (Array.isArray(raw.history)) {
     for (const run of raw.history) {
@@ -101,6 +106,8 @@ export function writeSave(save, storage = defaultStorage()) {
     flightBestLevel: save.flightBestLevel,
     heliBestScore: save.heliBestScore,
     heliBestLevel: save.heliBestLevel,
+    chopperBestScore: save.chopperBestScore,
+    chopperBestLevel: save.chopperBestLevel,
     settings: {
       controls: save.settings.controls,
       sound: save.settings.sound,
@@ -113,6 +120,7 @@ export function writeSave(save, storage = defaultStorage()) {
     history: save.history.map(cleanRun).filter(Boolean),
   };
   if (COLLECTIVE_SIDES.includes(save.settings.collectiveSide)) clean.settings.collectiveSide = save.settings.collectiveSide;
+  if (typeof save.settings.seenChopperTips === 'boolean') clean.settings.seenChopperTips = save.settings.seenChopperTips;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(clean));
     return true;
@@ -126,11 +134,17 @@ export function collectiveSideOf(save) {
   return COLLECTIVE_SIDES.includes(save.settings.collectiveSide) ? save.settings.collectiveSide : 'left';
 }
 
+// 3D Heli: true once the first-run tips have been seen ("Got it").
+export function seenChopperTipsOf(save) {
+  return save.settings.seenChopperTips === true;
+}
+
 // Names of the best score / best level fields for each game mode.
 const BEST_KEYS = {
   classic: ['bestScore', 'bestLevel'],
   flight: ['flightBestScore', 'flightBestLevel'],
   heli: ['heliBestScore', 'heliBestLevel'],
+  chopper: ['chopperBestScore', 'chopperBestLevel'],
 };
 const bestKeys = (mode) => BEST_KEYS[mode] || BEST_KEYS.classic;
 
