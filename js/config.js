@@ -10,13 +10,13 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
-  baseSpeed: 22,            // forward speed at the very start
-  speedPerLevel: 2.5,       // added at each new level
-  speedRampPerSecond: 0.08, // gentle extra speed while you stay in a level
+  baseSpeed: 24,            // forward speed at the very start
+  speedPerLevel: 2.75,      // added at each new level
+  speedRampPerSecond: 0.09, // gentle extra speed while you stay in a level
   lapSpeedBonus: 5,         // extra speed for each lap after the first
   maxFrameTime: 0.05,       // seconds; a phone hiccup can't skip further than this
   boostMultiplier: 1.5,     // holding the boost button makes you this many times faster
@@ -142,8 +142,8 @@ export const CONFIG = {
 export const LEVELS = [
   {
     name: 'Morning',
-    pattern: { type: 'scatter', density: 1.6 },
-    flight: { type: 'floaters', density: 1.6, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 1.8 },
+    flight: { type: 'floaters', density: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
       cube: '#8d939b', ship: '#d9483b', text: '#26303c',
@@ -151,12 +151,12 @@ export const LEVELS = [
   },
   {
     name: 'Sunset',
-    pattern: { type: 'scatter', density: 2.6 },
+    pattern: { type: 'scatter', density: 2.9 },
     flight: {
       type: 'mixed', segmentLength: 150, ringSpacing: 70,
       sequence: [
-        { type: 'floaters', density: 2.4, minSize: 1.4, maxSize: 2.8 },
-        { type: 'pillars', chance: 0.8, minHeight: 2 },
+        { type: 'floaters', density: 2.7, minSize: 1.4, maxSize: 2.8 },
+        { type: 'pillars', chance: 0.9, minHeight: 2 },
       ],
     },
     palette: {
@@ -166,8 +166,8 @@ export const LEVELS = [
   },
   {
     name: 'Lagoon',
-    pattern: { type: 'clusters', chance: 0.6, min: 3, max: 5 },
-    flight: { type: 'pillars', chance: 0.9, minHeight: 2, ringSpacing: 60 },
+    pattern: { type: 'clusters', chance: 0.66, min: 3, max: 5 },
+    flight: { type: 'pillars', chance: 1, minHeight: 2, ringSpacing: 60 },
     palette: {
       sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
@@ -175,8 +175,8 @@ export const LEVELS = [
   },
   {
     name: 'Gates',
-    pattern: { type: 'gates', rowSpacing: 18, gapWidth: 3.2, wingCubes: 4, between: 1 },
-    flight: { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2, ringSpacing: 66 },
+    pattern: { type: 'gates', rowSpacing: 16, gapWidth: 2.9, wingCubes: 4, between: 1 },
+    flight: { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2, ringSpacing: 66 },
     palette: {
       sky: '#c4b1e6', skyHorizon: '#efe7fa', ground: '#f6efdc', grid: '#e6d9bd',
       cube: '#7a49b4', ship: '#e46f35', text: '#2d1e46',
@@ -184,8 +184,8 @@ export const LEVELS = [
   },
   {
     name: 'Night',
-    pattern: { type: 'scatter', density: 3.6 },
-    flight: { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 4.0 },
+    flight: { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
       cube: '#19e2ef', ship: '#ff4fa3', text: '#d8f6ff',
@@ -194,8 +194,8 @@ export const LEVELS = [
   },
   {
     name: 'Canyon',
-    pattern: { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.6 },
-    flight: { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4, ringSpacing: 48 },
+    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.7 },
+    flight: { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4, ringSpacing: 48 },
     palette: {
       sky: '#d5845a', skyHorizon: '#f2c08d', ground: '#a9562f', grid: '#934625',
       cube: '#6b2d1b', ship: '#f6e8c6', text: '#2a1209',
@@ -206,17 +206,17 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 160,
       sequence: [
-        { type: 'scatter', density: 2.8 },
-        { type: 'gates', rowSpacing: 16, gapWidth: 3.2, wingCubes: 5, between: 0.8 },
-        { type: 'clusters', chance: 0.6, min: 3, max: 6 },
+        { type: 'scatter', density: 3.1 },
+        { type: 'gates', rowSpacing: 14.5, gapWidth: 2.9, wingCubes: 5, between: 0.8 },
+        { type: 'clusters', chance: 0.66, min: 3, max: 6 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 160, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 2.6, minSize: 1.4, maxSize: 2.6 },
-        { type: 'frames', spacing: 22, holeWidth: 3.6, holeHeight: 3.0, extent: 7, depth: 1.2 },
-        { type: 'pillars', chance: 0.9, minHeight: 2 },
+        { type: 'floaters', density: 2.9, minSize: 1.4, maxSize: 2.6 },
+        { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2 },
+        { type: 'pillars', chance: 1, minHeight: 2 },
       ],
     },
     palette: {
@@ -231,18 +231,18 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 180,
       sequence: [
-        { type: 'scatter', density: 3.4 },
-        { type: 'canyon', width: 5.5, wallDepth: 6, extra: 0.8 },
-        { type: 'gates', rowSpacing: 15, gapWidth: 3.0, wingCubes: 6, between: 1.2 },
-        { type: 'clusters', chance: 0.7, min: 3, max: 6 },
+        { type: 'scatter', density: 3.8 },
+        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.9 },
+        { type: 'gates', rowSpacing: 13.5, gapWidth: 2.7, wingCubes: 6, between: 1.2 },
+        { type: 'clusters', chance: 0.77, min: 3, max: 6 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 180, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 3.2, minSize: 1.2, maxSize: 2.8 },
-        { type: 'frames', spacing: 4, holeWidth: 5.5, holeHeight: 4.4, extent: 4, depth: 4 },
-        { type: 'frames', spacing: 20, holeWidth: 3.4, holeHeight: 2.9, extent: 7, depth: 1.2 },
+        { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.8 },
+        { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4 },
+        { type: 'frames', spacing: 18, holeWidth: 3.1, holeHeight: 2.65, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 3 },
       ],
     },
