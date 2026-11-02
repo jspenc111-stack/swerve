@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -130,6 +130,37 @@ export const CONFIG = {
   heliGemBonus: 25,           // points for each gem
   heliSmokePerSec: 14,        // exhaust puffs per second
 
+  // ---- 3D Heli mode ----------------------------------------------------------
+  // A helicopter on the 3D Flight courses, flown with two thumbs. The LEFT
+  // thumb is the collective (a lift lever that stays where you leave it); the
+  // RIGHT thumb is the cyclic (push forward to fly, sideways to slide). You
+  // choose your own speed; flying faster earns up to ×2 points.
+  chopperTopSpeedFactor: 0.7, // top speed as a share of Classic's speed for the level
+  chopperForwardAccel: 10,    // how fast pushing forward speeds you up
+  chopperBrake: 14,           // how fast pulling back slows you down
+  chopperForwardDrag: 0.06,   // how quickly speed fades with the stick centered
+  chopperSideAccel: 30,       // how quickly a sideways slide builds up
+  chopperMaxSideSpeed: 8,     // top sideways speed
+  chopperSideFriction: 4,     // how quickly a slide stops after you let go (low = slidier)
+  chopperHover: 0.45,         // lever position that holds your height (0 = bottom, 1 = top)
+  chopperMaxClimb: 8,         // top climb speed (lever all the way up)
+  chopperMaxSink: 7,          // top descent speed (lever all the way down)
+  chopperClimbEase: 3,        // how quickly climbing follows the lever (lower = floatier)
+  chopperCrashSink: 4.5,      // touching the ground faster than this is a crash
+  collectiveTravelPx: 220,    // thumb travel (pixels) for the full lever range
+  chopperPitchDeg: 14,        // how far the nose dips/lifts when speeding up/slowing (look only)
+  chopperRollDeg: 22,         // how far it banks when sliding sideways (look only)
+  chopperLength: 2.2,         // helicopter size: nose to tail
+  chopperBodyWidth: 0.7,
+  chopperBodyHeight: 0.9,
+  chopperRotorDiameter: 2.2,  // main rotor size (it counts for crashes!)
+  chopperHitboxScale: 0.7,    // hitbox is smaller than the drawing (fair near-misses)
+  chopperCameraBack: 5,       // chase camera distance behind the helicopter
+  chopperCameraAbove: 2,      // chase camera height above the helicopter
+  chopperScorePerUnit: 1,     // points per unit of distance at ×1
+  chopperMaxMultiplier: 2,    // score multiplier at top speed (×1 at half speed or slower)
+  chopperLevelDistance: 420,  // distance per level (about 25 s at top speed)
+
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
   tiltDeadZoneDeg: 2.5,     // small tilts are ignored so the ship doesn't drift
@@ -155,7 +186,8 @@ export const CONFIG = {
 //              between: loose cubes per row between gates (optional, 0)
 //   canyon   — width: corridor width; wallDepth: wall thickness; extra: stray cubes outside
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
-// flight: the obstacles for 3D Flight mode. type is one of:
+// flight: the obstacles for 3D Flight mode (3D Heli flies the same courses,
+//   without drones). type is one of:
 //   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size
 //   pillars  — towers rising from the ground. chance: per row; minHeight: shortest tower
 //   frames   — walls with a window to fly through. spacing: distance between walls

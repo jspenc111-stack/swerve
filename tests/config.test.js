@@ -181,3 +181,29 @@ test('every level has a valid Helicopter cave', () => {
   assert.ok(CONFIG.caveStep > 0 && CONFIG.caveStep <= 1);
   assert.ok(CONFIG.heliGemSpacing > 0);
 });
+
+const CHOPPER_KEYS = [
+  'chopperTopSpeedFactor', 'chopperForwardAccel', 'chopperBrake', 'chopperForwardDrag',
+  'chopperSideAccel', 'chopperMaxSideSpeed', 'chopperSideFriction', 'chopperHover',
+  'chopperMaxClimb', 'chopperMaxSink', 'chopperClimbEase', 'chopperCrashSink', 'collectiveTravelPx',
+  'chopperPitchDeg', 'chopperRollDeg', 'chopperLength', 'chopperBodyWidth', 'chopperBodyHeight',
+  'chopperRotorDiameter', 'chopperHitboxScale', 'chopperCameraBack', 'chopperCameraAbove',
+  'chopperScorePerUnit', 'chopperMaxMultiplier', 'chopperLevelDistance',
+];
+
+test('3D Heli values are all present and sensible', () => {
+  for (const k of CHOPPER_KEYS) {
+    assert.equal(typeof CONFIG[k], 'number', `${k} missing`);
+    assert.ok(Number.isFinite(CONFIG[k]) && CONFIG[k] > 0, `${k} must be above 0`);
+  }
+  assert.ok(CONFIG.chopperHover > 0 && CONFIG.chopperHover < 1, 'chopperHover must be between 0 and 1');
+  assert.ok(CONFIG.chopperTopSpeedFactor <= 1, 'top speed is at most Classic speed');
+  assert.ok(CONFIG.chopperHitboxScale > 0 && CONFIG.chopperHitboxScale <= 1);
+  assert.ok(CONFIG.chopperMaxMultiplier >= 1);
+  assert.ok(CONFIG.chopperCrashSink < CONFIG.chopperMaxSink, 'dropping at full sink must be a crash');
+  assert.ok(CONFIG.chopperSideFriction < CONFIG.chopperSideAccel, 'it slides a little');
+  assert.ok(CONFIG.chopperForwardDrag < 1, 'speed fades slowly');
+  assert.ok(CONFIG.chopperLevelDistance > CONFIG.breatherBefore + CONFIG.breatherAfter + CONFIG.fogDistance);
+  assert.ok(CONFIG.chopperCameraBack > CONFIG.chopperLength, 'camera sits behind the helicopter');
+  assert.ok(CONFIG.collectiveTravelPx >= 60);
+});
