@@ -25,7 +25,7 @@ import {
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
-  playShot, playHit, playBoom,
+  playShot, playHit, playBoom, playGem, setRotorHum,
 } from './audio.js';
 
 const DEG = Math.PI / 180;
@@ -674,6 +674,7 @@ function frame(now) {
         playHit();
       } else if (e.type === 'gem') {
         heliGemSparkle(heliRenderer, heli, CONFIG.heliGemBonus);
+        playGem();
       } else if (e.type === 'destroy') {
         playBoom(e.big);
         vibrate(e.big ? 30 : 15, save.settings.vibration);
@@ -709,6 +710,8 @@ function frame(now) {
   if (mode === 'playing') updateBank(realDt);
   updateRoll();
   view.flash = Math.max(view.flash, updateLightning(now));
+  // Rotor hum: only while a Helicopter run is on screen (not paused or crashed).
+  setRotorHum(gameMode === 'heli' && mode === 'playing' && !heli.crashed, heliHolding && heli.started);
   if (gameMode === 'heli') {
     const fxDt = mode === 'paused' || mode === 'settings' || mode === 'history' ? 0 : realDt;
     updateHeliFx(heliRenderer, heli, CONFIG, fxDt, heliHolding && heli.started, heli.started && !heli.crashed);
