@@ -11,6 +11,10 @@
 // where you touched), and tilt uses both left/right and forward/back tilt.
 // In Helicopter mode, holding ANY touch (or the mouse, Space, ↑ or W) lifts;
 // the pause button and P/Esc pause.
+// In 3D Heli mode, two thumbs: touches starting in the collective zone (left
+// 40% of the screen, or right 40% for left-handed play) slide the lift lever,
+// which stays where you leave it; touches starting anywhere else work a
+// floating joystick (the cyclic). See "3D Heli: two-thumb controls" below.
 // Tilt readings are only used live for steering; they are never stored.
 
 export function createInput(target, config) {
@@ -32,25 +36,44 @@ export function createInput(target, config) {
     boostTouches: 0,   // fingers on the boost button
     spaceKey: false,   // Space held (lift in Helicopter mode)
     heliMode: false,   // true in Helicopter mode: Space lifts instead of pausing
+    chopperMode: false, // true in 3D Heli mode: touches go to the two-thumb controls
+    chopper: createChopperControls(config),
+    keyW: false,       // W / S held: move the 3D Heli lever
+    keyS: false,
+    arrowUp: false,    // ↑ / ↓ held: the 3D Heli cyclic, forward/back
+    arrowDown: false,
   };
+  const viewWidth = () => window.innerWidth || target.clientWidth || 1;
 
   target.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     try { target.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     removePointer(input, e.pointerId);
     input.pointers.push({ id: e.pointerId, x: e.clientX, startX: e.clientX, y: e.clientY, startY: e.clientY });
+    if (input.chopperMode) thumbDown(input.chopper, e.pointerId, e.clientX, e.clientY, viewWidth());
   });
   target.addEventListener('pointermove', (e) => {
     const p = input.pointers.find((q) => q.id === e.pointerId);
     if (p) { p.x = e.clientX; p.y = e.clientY; }
+    thumbMove(input.chopper, e.pointerId, e.clientX, e.clientY);
   });
-  const end = (e) => removePointer(input, e.pointerId);
+  const end = (e) => {
+    removePointer(input, e.pointerId);
+    thumbUp(input.chopper, e.pointerId);
+  };
   target.addEventListener('pointerup', end);
   target.addEventListener('pointercancel', end);
   target.addEventListener('lostpointercapture', end);
   target.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  const setChopperKey = (e, on) => {
+    if (e.key === 'w' || e.key === 'W') input.keyW = on;
+    else if (e.key === 's' || e.key === 'S') input.keyS = on;
+    else if (e.key === 'ArrowUp') input.arrowUp = on;
+    else if (e.key === 'ArrowDown') input.arrowDown = on;
+  };
   window.addEventListener('keydown', (e) => {
+    setChopperKey(e, true);
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.left = true;
     else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.right = true;
     else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.upKey = true;
@@ -65,6 +88,7 @@ export function createInput(target, config) {
     }
   });
   window.addEventListener('keyup', (e) => {
+    setChopperKey(e, false);
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.left = false;
     else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.right = false;
     else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') input.upKey = false;
@@ -131,6 +155,11 @@ export function clearInput(input) {
   input.downKey = false;
   input.shiftKey = false;
   input.spaceKey = false;
+  input.keyW = false;
+  input.keyS = false;
+  input.arrowUp = false;
+  input.arrowDown = false;
+  releaseThumbs(input.chopper); // the lever stays where it is
   if (input.clearBoost) input.clearBoost();
 }
 
@@ -222,4 +251,132 @@ export function getSteer(input, viewWidth) {
 // Helicopter mode: true while any touch, mouse button, Space, ↑ or W is held.
 export function getHeliHold(input) {
   return input.pointers.length > 0 || input.spaceKey || input.upKey;
+}
+
+// ---- 3D Heli: two-thumb controls ---------------------------------------------
+// Pure logic (no DOM), so it can be tested in Node. Pointer positions are in
+// screen pixels.
+//
+//   lever  — the collective, 0 (bottom) … 1 (top). Dragging is RELATIVE: put
+//            your thumb anywhere in the collective zone; moving it up by
+//            collectiveTravelPx moves the lever its full range. It stays put
+//            when you let go.
+//   stickX — the cyclic sideways, -1 left … 1 right
+//   stickY — the cyclic forward/back, -1 pull back … 1 push forward
+//            (a floating joystick where your thumb lands; it eases back to
+//            the middle when you let go)
+// Each touch keeps the role of the zone it STARTED in until it lifts, so
+// thumbs can wander without swapping jobs.
+
+export const COLLECTIVE_ZONE = 0.4;  // share of the screen width
+const STICK_RETURN = 14;             // how quickly the stick eases back to the middle
+const KEY_LEVER_SPEED = 0.7;         // W/S: lever travel per second
+
+export function createChopperControls(config) {
+  return {
+    config,
+    side: 'left',       // which side the collective is on ('left' or 'right')
+    lever: 0,
+    stickX: 0,
+    stickY: 0,
+    thumbs: [],         // { id, role: 'lever' | 'stick', x0, y0, x, y, lastY }
+    hoverTick: false,   // set when the lever crosses the hover mark (for a tiny buzz)
+  };
+}
+
+// Which job a touch starting at x gets.
+export function thumbRole(x, width, side = 'left') {
+  const zone = width * COLLECTIVE_ZONE;
+  if (side === 'right') return x >= width - zone ? 'lever' : 'stick';
+  return x < zone ? 'lever' : 'stick';
+}
+
+export function thumbDown(cc, id, x, y, width) {
+  thumbUp(cc, id);
+  cc.thumbs.push({ id, role: thumbRole(x, width, cc.side), x0: x, y0: y, x, y, lastY: y });
+}
+
+export function thumbMove(cc, id, x, y) {
+  const t = cc.thumbs.find((q) => q.id === id);
+  if (!t) return;
+  t.x = x;
+  t.y = y;
+  if (t.role === 'lever') {
+    setLever(cc, cc.lever - (y - t.lastY) / cc.config.collectiveTravelPx);
+    t.lastY = y;
+  }
+}
+
+export function thumbUp(cc, id) {
+  const i = cc.thumbs.findIndex((q) => q.id === id);
+  if (i >= 0) cc.thumbs.splice(i, 1);
+}
+
+export function releaseThumbs(cc) {
+  cc.thumbs.length = 0;
+}
+
+// Fresh run: lever at the bottom, stick centred.
+export function resetChopperControls(cc) {
+  cc.thumbs.length = 0;
+  cc.lever = 0;
+  cc.stickX = 0;
+  cc.stickY = 0;
+  cc.hoverTick = false;
+}
+
+function setLever(cc, value) {
+  const v = Math.max(0, Math.min(1, value));
+  const h = cc.config.chopperHover;
+  if ((cc.lever - h) * (v - h) < 0 || (v === h && cc.lever !== h)) cc.hoverTick = true;
+  cc.lever = v;
+}
+
+// The joystick touch (the most recent stick touch), or null.
+export function stickThumb(cc) {
+  for (let i = cc.thumbs.length - 1; i >= 0; i--) if (cc.thumbs[i].role === 'stick') return cc.thumbs[i];
+  return null;
+}
+
+// True while a thumb is on the lever.
+export function leverHeld(cc) {
+  return cc.thumbs.some((t) => t.role === 'lever');
+}
+
+// Call once a frame. keys: { up, down } move the lever (W/S); { fwd, back,
+// left, right } work the cyclic (arrow keys).
+export function updateChopperControls(cc, dt, keys = NO_KEYS) {
+  const leverKeys = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+  if (leverKeys !== 0 && dt > 0) setLever(cc, cc.lever + leverKeys * KEY_LEVER_SPEED * Math.min(dt, 0.1));
+  const kx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const ky = (keys.fwd ? 1 : 0) - (keys.back ? 1 : 0);
+  const t = stickThumb(cc);
+  if (kx !== 0 || ky !== 0) {
+    cc.stickX = kx;
+    cc.stickY = ky;
+  } else if (t) {
+    const R = cc.config.joystickRadiusPx;
+    cc.stickX = Math.max(-1, Math.min(1, (t.x - t.x0) / R));
+    cc.stickY = Math.max(-1, Math.min(1, -(t.y - t.y0) / R));
+  } else {
+    // Released: spring back to the middle, quickly.
+    const k = Math.exp(-STICK_RETURN * Math.max(0, dt));
+    cc.stickX *= k;
+    cc.stickY *= k;
+    if (Math.abs(cc.stickX) < 0.02) cc.stickX = 0;
+    if (Math.abs(cc.stickY) < 0.02) cc.stickY = 0;
+  }
+  return cc;
+}
+const NO_KEYS = {};
+
+// The keyboard state for updateChopperControls, from this input.
+export function chopperKeys(input, out = {}) {
+  out.up = input.keyW;
+  out.down = input.keyS;
+  out.fwd = input.arrowUp;
+  out.back = input.arrowDown;
+  out.left = input.left;
+  out.right = input.right;
+  return out;
 }

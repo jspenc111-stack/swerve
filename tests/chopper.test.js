@@ -301,3 +301,104 @@ test('the course has no drones in 3D Heli, and 3D Flight still does', () => {
   assert.ok(seen > 0, '3D Flight still has drones');
   assert.equal(f.spawner.path.length, 0, '3D Flight does not record the path');
 });
+
+// ---- Two-thumb input (js/input.js; pure logic, no screen needed) ----
+
+import {
+  createChopperControls, thumbRole, thumbDown, thumbMove, thumbUp, updateChopperControls,
+  resetChopperControls, stickThumb, leverHeld, COLLECTIVE_ZONE,
+} from '../js/input.js';
+
+const W = 1000; // screen width in pixels for these tests
+
+test('touches keep the role of the zone they started in', () => {
+  assert.equal(COLLECTIVE_ZONE, 0.4);
+  assert.equal(thumbRole(100, W), 'lever');
+  assert.equal(thumbRole(399, W), 'lever');
+  assert.equal(thumbRole(401, W), 'stick');
+  assert.equal(thumbRole(900, W), 'stick');
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 1, 100, 500, W);     // left thumb: lever
+  thumbDown(cc, 2, 800, 500, W);     // right thumb: stick
+  thumbMove(cc, 1, 700, 500 - CONFIG.collectiveTravelPx / 2); // wanders into the right side
+  thumbMove(cc, 2, 150, 500);        // wanders into the left side
+  updateChopperControls(cc, DT);
+  assert.ok(Math.abs(cc.lever - 0.5) < 1e-9, 'left thumb still works the lever');
+  assert.equal(cc.stickX, -1, 'right thumb still works the stick');
+  assert.equal(stickThumb(cc).id, 2);
+  assert.ok(leverHeld(cc));
+});
+
+test('the lever drags relatively, covers its range in collectiveTravelPx, and stays put', () => {
+  const cc = createChopperControls(CONFIG);
+  const T = CONFIG.collectiveTravelPx;
+  thumbDown(cc, 1, 50, 600, W);
+  thumbMove(cc, 1, 60, 600 - T * 0.25);
+  assert.ok(Math.abs(cc.lever - 0.25) < 1e-9);
+  thumbMove(cc, 1, 60, 600 - T * 2); // way past the top: clamps at 1
+  assert.equal(cc.lever, 1);
+  thumbMove(cc, 1, 60, 600 - T * 2 + T * 0.1); // moving down responds right away
+  assert.ok(Math.abs(cc.lever - 0.9) < 1e-9);
+  thumbUp(cc, 1);
+  updateChopperControls(cc, 1);
+  assert.ok(Math.abs(cc.lever - 0.9) < 1e-9, 'stays put when released');
+  // A new touch anywhere in the zone picks up from there (no need to hit the handle).
+  thumbDown(cc, 3, 300, 100, W);
+  thumbMove(cc, 3, 300, 100 + T * 0.4);
+  assert.ok(Math.abs(cc.lever - 0.5) < 1e-9);
+});
+
+test('crossing the hover mark flags a tiny buzz', () => {
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 1, 50, 600, W);
+  thumbMove(cc, 1, 50, 600 - CONFIG.collectiveTravelPx * 0.3);
+  assert.equal(cc.hoverTick, false);
+  thumbMove(cc, 1, 50, 600 - CONFIG.collectiveTravelPx * 0.6);
+  assert.equal(cc.hoverTick, true);
+});
+
+test('the left-handed swap puts the collective on the right', () => {
+  assert.equal(thumbRole(900, W, 'right'), 'lever');
+  assert.equal(thumbRole(100, W, 'right'), 'stick');
+  assert.equal(thumbRole(599, W, 'right'), 'stick');
+  const cc = createChopperControls(CONFIG);
+  cc.side = 'right';
+  thumbDown(cc, 1, 950, 500, W);
+  thumbDown(cc, 2, 200, 500, W);
+  thumbMove(cc, 1, 950, 500 - CONFIG.collectiveTravelPx);
+  thumbMove(cc, 2, 200, 500 - CONFIG.joystickRadiusPx);
+  updateChopperControls(cc, DT);
+  assert.equal(cc.lever, 1);
+  assert.equal(cc.stickY, 1);
+  assert.equal(cc.stickX, 0);
+});
+
+test('the joystick floats where the thumb lands and springs back when released', () => {
+  const cc = createChopperControls(CONFIG);
+  const R = CONFIG.joystickRadiusPx;
+  thumbDown(cc, 5, 700, 300, W);
+  thumbMove(cc, 5, 700 + R / 2, 300 + R);
+  updateChopperControls(cc, DT);
+  assert.equal(cc.stickX, 0.5);
+  assert.equal(cc.stickY, -1, 'pulling back');
+  thumbUp(cc, 5);
+  updateChopperControls(cc, DT);
+  assert.ok(cc.stickY > -1 && cc.stickY < 0, 'easing back');
+  for (let i = 0; i < 30; i++) updateChopperControls(cc, DT);
+  assert.equal(cc.stickX, 0);
+  assert.equal(cc.stickY, 0);
+});
+
+test('keyboard: W/S move the lever (it stays), arrows work the cyclic', () => {
+  const cc = createChopperControls(CONFIG);
+  for (let i = 0; i < 60; i++) updateChopperControls(cc, DT, { up: true });
+  const held = cc.lever;
+  assert.ok(held > 0.5 && held < 1);
+  updateChopperControls(cc, DT, {});
+  assert.equal(cc.lever, held);
+  updateChopperControls(cc, DT, { fwd: true, left: true });
+  assert.equal(cc.stickY, 1);
+  assert.equal(cc.stickX, -1);
+  resetChopperControls(cc);
+  assert.equal(cc.lever, 0);
+});

@@ -21,7 +21,7 @@ import {
 } from './input.js';
 import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests,
+  bestScoreOf, runsIn, resetBests, collectiveSideOf,
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
@@ -452,10 +452,14 @@ function renderSettings() {
   $('btn-invert').setAttribute('aria-checked', String(save.settings.invertY));
   $('btn-autofire').textContent = `3D auto-fire: ${save.settings.autoFire ? 'On' : 'Off'}`;
   $('btn-autofire').setAttribute('aria-checked', String(save.settings.autoFire));
+  const right = collectiveSideOf(save) === 'right';
+  $('btn-collective').textContent = `3D Heli collective: ${right ? 'Right' : 'Left'}`;
+  $('btn-collective').setAttribute('aria-checked', String(right));
 }
 
 function applySettings() {
   setSoundEnabled(save.settings.sound);
+  input.chopper.side = collectiveSideOf(save);
   setControlMode(input, save.settings.controls);
   $('start-howto').textContent = howto();
 }
@@ -863,6 +867,9 @@ $('btn-sound').addEventListener('click', () => changeSetting((s) => { s.sound = 
 $('btn-vibration').addEventListener('click', () => changeSetting((s) => { s.vibration = !s.vibration; }));
 $('btn-invert').addEventListener('click', () => changeSetting((s) => { s.invertY = !s.invertY; }));
 $('btn-autofire').addEventListener('click', () => changeSetting((s) => { s.autoFire = !s.autoFire; }));
+$('btn-collective').addEventListener('click', () => changeSetting((s) => {
+  s.collectiveSide = collectiveSideOf(save) === 'right' ? 'left' : 'right';
+}));
 $('btn-reset').addEventListener('click', () => $('reset-confirm').classList.remove('hidden'));
 $('btn-reset-no').addEventListener('click', () => $('reset-confirm').classList.add('hidden'));
 $('btn-reset-yes').addEventListener('click', () => {

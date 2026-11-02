@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, GAME_MODES,
+  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -248,4 +248,15 @@ test('resetting best scores resets every mode and keeps the history', () => {
     assert.equal(s[k], fresh[k], k);
   }
   assert.equal(s.history.length, 3);
+});
+
+test('the 3D Heli collective side saves, and defaults to left', () => {
+  assert.equal(collectiveSideOf(defaultSave()), 'left');
+  const store = memoryStorage();
+  const s = defaultSave();
+  s.settings.collectiveSide = 'right';
+  writeSave(s, store);
+  assert.equal(collectiveSideOf(loadSave(store)), 'right');
+  const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { collectiveSide: 'middle' } }) }));
+  assert.equal(collectiveSideOf(bad), 'left');
 });

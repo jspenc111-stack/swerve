@@ -7,6 +7,7 @@ export const STORAGE_KEY = 'swerve:v1';
 export const CONTROL_MODES = ['sides', 'tilt', 'drag'];
 export const GAME_MODES = ['classic', 'flight', 'heli'];
 export const DEFAULT_HISTORY_MAX = 100;
+export const COLLECTIVE_SIDES = ['left', 'right'];
 
 export function defaultSave() {
   return {
@@ -19,6 +20,9 @@ export function defaultSave() {
     settings: {
       controls: 'sides', sound: true, vibration: true, startLevel: 1,
       mode: 'classic', invertY: false, autoFire: true,
+      // 3D Heli settings (collectiveSide, seenChopperTips) are only stored
+      // once they've been set, so older saves load exactly as they were. Read
+      // them with collectiveSideOf() and seenChopperTipsOf().
     },
     history: [],
   };
@@ -75,6 +79,7 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
     if (GAME_MODES.includes(s.mode)) save.settings.mode = s.mode;
     if (typeof s.invertY === 'boolean') save.settings.invertY = s.invertY;
     if (typeof s.autoFire === 'boolean') save.settings.autoFire = s.autoFire;
+    if (COLLECTIVE_SIDES.includes(s.collectiveSide)) save.settings.collectiveSide = s.collectiveSide;
   }
   if (Array.isArray(raw.history)) {
     for (const run of raw.history) {
@@ -107,12 +112,18 @@ export function writeSave(save, storage = defaultStorage()) {
     },
     history: save.history.map(cleanRun).filter(Boolean),
   };
+  if (COLLECTIVE_SIDES.includes(save.settings.collectiveSide)) clean.settings.collectiveSide = save.settings.collectiveSide;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(clean));
     return true;
   } catch {
     return false; // storage full or blocked: the game keeps working
   }
+}
+
+// 3D Heli: which side of the screen the lift lever (collective) is on.
+export function collectiveSideOf(save) {
+  return COLLECTIVE_SIDES.includes(save.settings.collectiveSide) ? save.settings.collectiveSide : 'left';
 }
 
 // Names of the best score / best level fields for each game mode.

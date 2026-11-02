@@ -680,3 +680,98 @@ function drawJet(r, s, p, f, cam) {
   }
   ctx.globalCompositeOperation = 'source-over';
 }
+
+// ---- 3D Heli: the two-thumb controls ---------------------------------------
+// The collective is a tall slider near its screen edge (about 60% of the
+// screen height) with a handle and a HOVER mark. The cyclic is a floating
+// joystick where the thumb landed; when no thumb is on it, a faint ring shows
+// where to put one.
+
+// Where the collective slider sits: { x, top, bottom } in screen pixels.
+export function collectiveSlider(r, side, out = {}) {
+  const margin = Math.max(34, Math.min(64, r.w * 0.06));
+  out.x = side === 'right' ? r.w - margin : margin;
+  const len = r.h * 0.6;
+  out.top = r.h * 0.3;
+  out.bottom = Math.min(r.h - 24, out.top + len);
+  return out;
+}
+
+const SL = {};
+export function drawChopperControls(r, cc, hover, leverHeld, stick) {
+  const ctx = r.ctx;
+  const s = collectiveSlider(r, cc.side, SL);
+  const yOf = (v) => s.bottom - (s.bottom - s.top) * v;
+  ctx.save();
+  ctx.lineCap = 'round';
+  // Track.
+  ctx.globalAlpha = leverHeld ? 0.55 : 0.4;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.moveTo(s.x, s.top); ctx.lineTo(s.x, s.bottom); ctx.stroke();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(s.x, s.top); ctx.lineTo(s.x, s.bottom); ctx.stroke();
+  // Filled part up to the lever.
+  const yl = yOf(cc.lever);
+  ctx.globalAlpha = 0.75;
+  ctx.strokeStyle = cc.lever >= hover ? '#7ee08a' : '#ffb35c';
+  ctx.beginPath(); ctx.moveTo(s.x, s.bottom); ctx.lineTo(s.x, yl); ctx.stroke();
+  // HOVER mark.
+  const yh = yOf(hover);
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(s.x - 14, yh); ctx.lineTo(s.x + 14, yh); ctx.stroke();
+  ctx.font = '700 11px system-ui, -apple-system, Roboto, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = cc.side === 'right' ? 'right' : 'left';
+  const tx = cc.side === 'right' ? s.x - 18 : s.x + 18;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.strokeText('HOVER', tx, yh);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('HOVER', tx, yh);
+  // Handle.
+  ctx.globalAlpha = leverHeld ? 0.95 : 0.8;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(s.x - 22, yl - 9, 44, 18, 9);
+  else ctx.rect(s.x - 22, yl - 9, 44, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(s.x - 12, yl - 1, 24, 2);
+  // "LIFT" under the slider.
+  ctx.globalAlpha = 0.7;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 3;
+  ctx.strokeText('LIFT', s.x, s.bottom + 10);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('LIFT', s.x, s.bottom + 10);
+  ctx.restore();
+
+  // The cyclic: the floating joystick, or a faint ring where it would go.
+  if (stick) {
+    drawJoystick(r, { x0: stick.x0, y0: stick.y0, x: stick.x, y: stick.y });
+  } else {
+    const R = r.config.joystickRadiusPx;
+    const gx = cc.side === 'right' ? Math.max(R + 20, r.w * 0.3) : Math.min(r.w - R - 20, r.w * 0.7);
+    const gy = Math.min(r.h - R - 24, r.h * 0.68);
+    ctx.globalAlpha = 0.16;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(gx, gy, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(gx + cc.stickX * R, gy - cc.stickY * R, R * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
