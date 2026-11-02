@@ -1,21 +1,27 @@
 // main.js — boots the app, runs the game loop and switches screens.
-// Two game modes share the menus, levels, colors and effects:
-//   Classic   — rules in game.js, drawing in render.js
-//   3D Flight — rules in flight.js, drawing in render3d.js
+// Three game modes share the menus, levels, colors and effects:
+//   Classic    — rules in game.js, drawing in render.js
+//   3D Flight  — rules in flight.js, drawing in render3d.js
+//   Helicopter — rules in heli.js (cave in caveSpawner.js), drawing in renderHeli.js
 
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
 import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
 import { createFlight, resetFlight, stepFlight, jumpFlightToLevel } from './flight.js';
 import { createFlightRenderer, drawFlightFrame } from './render3d.js';
+import { createHeli, resetHeli, stepHeli, autopilot, jumpHeliToLevel } from './heli.js';
+import {
+  createHeliRenderer, drawHeliFrame, heliVisibleRange, updateHeliFx, clearHeliFx,
+  heliCrashBurst, heliGemSparkle,
+} from './renderHeli.js';
 import { blendPalette, copyPalette, bannerText, hudLabel } from './levels.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
   createInput, getSteer, getFlightSteer, getBoost, bindBoostButton, clearInput, setControlMode,
-  calibrateTilt, requestTiltPermission,
+  calibrateTilt, requestTiltPermission, getHeliHold,
 } from './input.js';
 import {
-  loadSave, writeSave, recordRun, defaultSave, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn,
+  loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
+  bestScoreOf, runsIn, resetBests,
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
@@ -31,13 +37,18 @@ const game = createGame(CONFIG, LEVELS, (Date.now() >>> 0) || 1);
 const flight = createFlight(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x5bd1e995) || 2);
 const flightRenderer = createFlightRenderer();
 const flightSteer = { x: 0, y: 0, joystick: null };
+const heli = createHeli(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x2545f491) || 3);
+const heliRenderer = createHeliRenderer();
+let heliHolding = false;
 const save = loadSave(undefined, CONFIG.historyMax);
 bindBoostButton(input, $('btn-boost'));
 
-// Which game mode is selected: 'classic' or 'flight' (3D).
+// Which game mode is selected: 'classic', 'flight' (3D) or 'heli' (Helicopter).
 let gameMode = save.settings.mode;
 function cur() {
-  return gameMode === 'flight' ? flight : game;
+  if (gameMode === 'flight') return flight;
+  if (gameMode === 'heli') return heli;
+  return game;
 }
 
 const screens = {
@@ -151,6 +162,7 @@ function randomBetween(a, b) {
 
 // Tilt the view toward the turn, easing in and out.
 function updateBank(dt) {
+  if (gameMode === 'heli') return; // the helicopter view doesn't bank
   const target = (cur().vx / CONFIG.maxSteerSpeed) * CONFIG.bankMaxDeg * DEG;
   view.bank += (target - view.bank) * (1 - Math.exp(-CONFIG.bankEase * dt));
 }
@@ -219,7 +231,9 @@ const HOWTO_FLIGHT = {
   touch: 'Drag anywhere to fly. Your guns fire by themselves: line up the reticle with drones to blast them.',
   tilt: 'Tilt to fly: sideways to turn, toward/away to climb/dive. Guns fire by themselves: aim at drones.',
 };
+const HOWTO_HELI = 'Hold anywhere to fly up. Let go to drop. Turn your phone sideways for the best view.';
 function howto() {
+  if (gameMode === 'heli') return HOWTO_HELI;
   if (gameMode === 'flight') return save.settings.controls === 'tilt' ? HOWTO_FLIGHT.tilt : HOWTO_FLIGHT.touch;
   return HOWTO[save.settings.controls];
 }
@@ -229,6 +243,10 @@ function resetCurrent() {
   if (gameMode === 'flight') {
     resetFlight(flight, undefined, startLevelIndex());
     view.camY = flight.y + CONFIG.flightCameraAbove;
+  } else if (gameMode === 'heli') {
+    sizeHeliCave();
+    resetHeli(heli, undefined, startLevelIndex());
+    clearHeliFx(heliRenderer);
   } else {
     resetGame(game, undefined, startLevelIndex());
   }
@@ -241,6 +259,8 @@ function renderModeSwitch() {
     b.setAttribute('aria-checked', String(b.dataset.mode === gameMode));
   }
   $('altimeter').classList.toggle('hidden', gameMode !== 'flight');
+  $('btn-boost').classList.toggle('hidden', gameMode === 'heli'); // no boost in Helicopter mode
+  input.heliMode = gameMode === 'heli';
   $('start-howto').textContent = howto();
 }
 
@@ -277,6 +297,7 @@ function startRun() {
   updateHud();
   showBanner(performance.now());
   keepAwake(true);
+  if (gameMode === 'heli') startHeliRun();
 }
 
 function pause() {
@@ -302,6 +323,8 @@ function toMenu() {
     location.reload();
     return;
   }
+  lockOrientation('portrait'); // the menus stay upright
+  hideHeliHints();
   mode = 'menu';
   resetCurrent();
   startLevelFade(true);
@@ -317,6 +340,7 @@ function toMenu() {
 function crash(now) {
   mode = 'crashing';
   crashAt = now;
+  if (gameMode === 'heli') heliCrashBurst(heliRenderer, heli, shownPalette.ship);
   playCrash();
   vibrate(CONFIG.vibrateMs, save.settings.vibration);
 }
@@ -332,13 +356,15 @@ function showGameOver() {
   $('over-level').textContent = `Reached level ${levelNumber} · ${hudLabel(g.info)}` +
     (startNumber > 1 ? ` (started at ${startNumber})` : '') +
     (gameMode === 'flight' && flight.rings > 0 ? ` · ${flight.rings} ring${flight.rings === 1 ? '' : 's'}` : '') +
-    (gameMode === 'flight' && flight.kills > 0 ? ` · ${flight.kills} drone${flight.kills === 1 ? '' : 's'}` : '');
+    (gameMode === 'flight' && flight.kills > 0 ? ` · ${flight.kills} drone${flight.kills === 1 ? '' : 's'}` : '') +
+    (gameMode === 'heli' && heli.gems > 0 ? ` · ${heli.gems} gem${heli.gems === 1 ? '' : 's'}` : '');
   // "Your #3 score" for a good run that isn't a new best (within this mode).
   const rank = rankOf(save, g.score, gameMode);
   const runs = runsIn(save, gameMode);
   const rankEl = $('over-rank');
   rankEl.classList.toggle('hidden', newBest || g.score === 0 || rank > 10 || runs < 3);
-  rankEl.textContent = `Your #${rank} ${gameMode === 'flight' ? '3D ' : ''}score out of ${runs} runs`;
+  const modeWord = gameMode === 'flight' ? '3D ' : gameMode === 'heli' ? 'Helicopter ' : '';
+  rankEl.textContent = `Your #${rank} ${modeWord}score out of ${runs} runs`;
   const nb = $('over-newbest');
   nb.classList.add('hidden');
   if (newBest) {
@@ -350,6 +376,59 @@ function showGameOver() {
   updateBestDisplays();
   showScreen('over');
   keepAwake(false);
+}
+
+// ---- Helicopter mode: screen orientation and hints --------------------------------
+// Helicopter mode is best played sideways. When a run starts we ask the phone
+// to turn the screen to landscape (this works in the installed app); the menus
+// go back to portrait. If the phone is still upright, a hint suggests turning
+// it, but the game is fully playable upright too.
+
+function lockOrientation(kind) {
+  try {
+    const o = screen.orientation;
+    if (o && typeof o.lock === 'function') o.lock(kind).catch(() => {});
+  } catch { /* not supported: play anyway */ }
+}
+
+const isLandscape = () => window.innerWidth > window.innerHeight;
+let wasLandscape = isLandscape();
+let turnHintTimer = 0;
+
+function startHeliRun() {
+  lockOrientation('landscape');
+  $('heli-hold').classList.remove('hidden');
+  clearTimeout(turnHintTimer);
+  // Give the screen a moment to turn before checking.
+  turnHintTimer = setTimeout(() => {
+    if (gameMode !== 'heli' || (mode !== 'playing' && mode !== 'paused') || isLandscape()) return;
+    $('heli-turn').classList.remove('hidden');
+    turnHintTimer = setTimeout(() => $('heli-turn').classList.add('hidden'), 3000);
+  }, 600);
+}
+
+function hideHeliHints() {
+  clearTimeout(turnHintTimer);
+  $('heli-hold').classList.add('hidden');
+  $('heli-turn').classList.add('hidden');
+}
+
+// Build the cave just beyond the right edge of the screen (never in view).
+function sizeHeliCave() {
+  const range = heliVisibleRange(renderer.w, renderer.h, CONFIG);
+  heli.spawner.ahead = range.ahead + 4;
+  heli.spawner.behind = range.behind + 6;
+}
+
+function onResize() {
+  resizeRenderer(renderer);
+  sizeHeliCave();
+  const land = isLandscape();
+  if (land === wasLandscape) return;
+  wasLandscape = land;
+  if (land) $('heli-turn').classList.add('hidden');
+  // Turning the phone mid-run pauses, so you're never caught out.
+  if (gameMode === 'heli' && mode === 'playing' && heli.started) pause();
 }
 
 // ---- Settings ------------------------------------------------------------------
@@ -576,6 +655,10 @@ function frame(now) {
         view.joystick.x = p.x;
         view.joystick.y = p.y;
       }
+    } else if (gameMode === 'heli') {
+      heliHolding = getHeliHold(input);
+      events = stepHeli(heli, dt, heliHolding);
+      if (heli.started) $('heli-hold').classList.add('hidden');
     } else {
       events = stepGame(game, dt, getSteer(input, renderer.w), getBoost(input));
     }
@@ -589,6 +672,8 @@ function frame(now) {
         playShot();
       } else if (e.type === 'hit') {
         playHit();
+      } else if (e.type === 'gem') {
+        heliGemSparkle(heliRenderer, heli, CONFIG.heliGemBonus);
       } else if (e.type === 'destroy') {
         playBoom(e.big);
         vibrate(e.big ? 30 : 15, save.settings.vibration);
@@ -599,6 +684,14 @@ function frame(now) {
       }
     }
     updateHud();
+  } else if (mode === 'menu' && gameMode === 'heli') {
+    // Menu preview: the helicopter flies itself through the chosen level.
+    heliHolding = heli.started ? autopilot(heli) : true;
+    stepHeli(heli, dt, heliHolding);
+    if (heli.crashed || heli.levelIndex !== heli.startLevel) {
+      resetHeli(heli, undefined, startLevelIndex());
+      clearHeliFx(heliRenderer);
+    }
   } else if (mode === 'crashing') {
     const t = now - crashAt;
     view.flash = Math.max(0, 1 - t / CONFIG.crashFlashMs);
@@ -616,7 +709,11 @@ function frame(now) {
   if (mode === 'playing') updateBank(realDt);
   updateRoll();
   view.flash = Math.max(view.flash, updateLightning(now));
-  if (gameMode === 'flight') {
+  if (gameMode === 'heli') {
+    const fxDt = mode === 'paused' || mode === 'settings' || mode === 'history' ? 0 : realDt;
+    updateHeliFx(heliRenderer, heli, CONFIG, fxDt, heliHolding && heli.started, heli.started && !heli.crashed);
+    drawHeliFrame(renderer, heliRenderer, heli, view);
+  } else if (gameMode === 'flight') {
     // The camera follows climbs and dives with a slight lag.
     const target = flight.y + CONFIG.flightCameraAbove;
     view.camY += (target - view.camY) * (1 - Math.exp(-CONFIG.flightCameraFollow * realDt));
@@ -679,6 +776,7 @@ function setupDebug() {
   inv.addEventListener('click', () => {
     game.invincible = !game.invincible;
     flight.invincible = game.invincible;
+    heli.invincible = game.invincible;
     inv.classList.toggle('on', game.invincible);
   });
   const hit = make('button', 'Hitboxes', toggles);
@@ -698,6 +796,7 @@ function setupDebug() {
 function debugJump(index) {
   if (mode !== 'playing') startRun();
   if (gameMode === 'flight') jumpFlightToLevel(flight, index);
+  else if (gameMode === 'heli') jumpHeliToLevel(heli, index);
   else jumpToLevel(game, index);
   lastLabel = '';
   startLevelFade(true);
@@ -708,7 +807,8 @@ function debugJump(index) {
 function updateFps(now) {
   fpsFrames++;
   if (now - fpsSince >= 500) {
-    const count = gameMode === 'flight' ? flight.spawner.boxes.length : game.spawner.cubes.length;
+    const count = gameMode === 'flight' ? flight.spawner.boxes.length
+      : gameMode === 'heli' ? heli.spawner.obstacles.length : game.spawner.cubes.length;
     fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · obstacles ${count}`;
     fpsFrames = 0;
     fpsSince = now;
@@ -763,11 +863,7 @@ $('btn-autofire').addEventListener('click', () => changeSetting((s) => { s.autoF
 $('btn-reset').addEventListener('click', () => $('reset-confirm').classList.remove('hidden'));
 $('btn-reset-no').addEventListener('click', () => $('reset-confirm').classList.add('hidden'));
 $('btn-reset-yes').addEventListener('click', () => {
-  const fresh = defaultSave();
-  save.bestScore = fresh.bestScore;
-  save.bestLevel = fresh.bestLevel;
-  save.flightBestScore = fresh.flightBestScore;
-  save.flightBestLevel = fresh.flightBestLevel;
+  resetBests(save);
   writeSave(save);
   updateBestDisplays();
   $('reset-confirm').classList.add('hidden');
@@ -787,7 +883,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', pause);
 
 $('version').textContent = `v${APP_VERSION}`;
-window.addEventListener('resize', () => resizeRenderer(renderer));
+window.addEventListener('resize', onResize);
 applySettings();
 buildPicker();
 renderModeSwitch();

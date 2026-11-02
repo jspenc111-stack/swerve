@@ -5,7 +5,7 @@
 
 export const STORAGE_KEY = 'swerve:v1';
 export const CONTROL_MODES = ['sides', 'tilt', 'drag'];
-export const GAME_MODES = ['classic', 'flight'];
+export const GAME_MODES = ['classic', 'flight', 'heli'];
 export const DEFAULT_HISTORY_MAX = 100;
 
 export function defaultSave() {
@@ -14,6 +14,8 @@ export function defaultSave() {
     bestLevel: 1,
     flightBestScore: 0,    // 3D Flight
     flightBestLevel: 1,
+    heliBestScore: 0,      // Helicopter
+    heliBestLevel: 1,
     settings: {
       controls: 'sides', sound: true, vibration: true, startLevel: 1,
       mode: 'classic', invertY: false, autoFire: true,
@@ -34,7 +36,7 @@ const isCount = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const isLevel = (n) => isCount(n) && n >= 1;
 
 // One past run: { score, level (reached), startLevel, at (time, ms since 1970),
-// mode ('classic' or 'flight') }.
+// mode ('classic', 'flight' or 'heli') }.
 function cleanRun(run) {
   if (!run || typeof run !== 'object') return null;
   if (!isCount(run.score) || !isLevel(run.level) || !isCount(run.at)) return null;
@@ -62,6 +64,8 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
   if (isLevel(raw.bestLevel)) save.bestLevel = Math.floor(raw.bestLevel);
   if (isCount(raw.flightBestScore)) save.flightBestScore = Math.floor(raw.flightBestScore);
   if (isLevel(raw.flightBestLevel)) save.flightBestLevel = Math.floor(raw.flightBestLevel);
+  if (isCount(raw.heliBestScore)) save.heliBestScore = Math.floor(raw.heliBestScore);
+  if (isLevel(raw.heliBestLevel)) save.heliBestLevel = Math.floor(raw.heliBestLevel);
   const s = raw.settings;
   if (s && typeof s === 'object') {
     if (CONTROL_MODES.includes(s.controls)) save.settings.controls = s.controls;
@@ -90,6 +94,8 @@ export function writeSave(save, storage = defaultStorage()) {
     bestLevel: save.bestLevel,
     flightBestScore: save.flightBestScore,
     flightBestLevel: save.flightBestLevel,
+    heliBestScore: save.heliBestScore,
+    heliBestLevel: save.heliBestLevel,
     settings: {
       controls: save.settings.controls,
       sound: save.settings.sound,
@@ -109,9 +115,25 @@ export function writeSave(save, storage = defaultStorage()) {
   }
 }
 
+// Names of the best score / best level fields for each game mode.
+const BEST_KEYS = {
+  classic: ['bestScore', 'bestLevel'],
+  flight: ['flightBestScore', 'flightBestLevel'],
+  heli: ['heliBestScore', 'heliBestLevel'],
+};
+const bestKeys = (mode) => BEST_KEYS[mode] || BEST_KEYS.classic;
+
 // Best score for a game mode.
 export function bestScoreOf(save, mode = 'classic') {
-  return mode === 'flight' ? save.flightBestScore : save.bestScore;
+  return save[bestKeys(mode)[0]];
+}
+
+// Reset every mode's best score and level (history is kept).
+export function resetBests(save) {
+  for (const [score, level] of Object.values(BEST_KEYS)) {
+    save[score] = 0;
+    save[level] = 1;
+  }
 }
 
 // Records a finished run: updates that mode's best score/level and adds it to
@@ -119,17 +141,13 @@ export function bestScoreOf(save, mode = 'classic') {
 // new best score in that mode. levelNumber and startLevel are 1-based; at is ms.
 export function recordRun(save, score, levelNumber, startLevel = 1, at = Date.now(),
   max = DEFAULT_HISTORY_MAX, mode = 'classic') {
-  const flight = mode === 'flight';
-  const newBest = score > (flight ? save.flightBestScore : save.bestScore);
-  if (flight) {
-    if (newBest) save.flightBestScore = score;
-    if (levelNumber > save.flightBestLevel) save.flightBestLevel = levelNumber;
-  } else {
-    if (newBest) save.bestScore = score;
-    if (levelNumber > save.bestLevel) save.bestLevel = levelNumber;
-  }
+  if (!GAME_MODES.includes(mode)) mode = 'classic';
+  const [scoreKey, levelKey] = bestKeys(mode);
+  const newBest = score > save[scoreKey];
+  if (newBest) save[scoreKey] = score;
+  if (levelNumber > save[levelKey]) save[levelKey] = levelNumber;
   if (score > 0) {
-    save.history.unshift({ score, level: levelNumber, startLevel, at, mode: flight ? 'flight' : 'classic' });
+    save.history.unshift({ score, level: levelNumber, startLevel, at, mode });
     if (save.history.length > max) save.history.length = max;
   }
   return newBest;
