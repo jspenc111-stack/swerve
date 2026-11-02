@@ -1,13 +1,19 @@
 // main.js — boots the app, runs the game loop and switches screens.
-// Three game modes share the menus, levels, colors and effects:
+// Four game modes share the menus, levels, colors and effects:
 //   Classic    — rules in game.js, drawing in render.js
 //   3D Flight  — rules in flight.js, drawing in render3d.js
 //   Helicopter — rules in heli.js (cave in caveSpawner.js), drawing in renderHeli.js
+//   3D Heli    — rules in chopper.js (course from flightSpawner.js), drawing in
+//                render3d.js and chopperModel.js; id 'chopper'
 
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
 import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
 import { createFlight, resetFlight, stepFlight, jumpFlightToLevel } from './flight.js';
-import { createFlightRenderer, drawFlightFrame } from './render3d.js';
+import { createFlightRenderer, drawFlightFrame, drawChopperFrame } from './render3d.js';
+import {
+  createChopper, resetChopper, stepChopper, chopperAutopilot, jumpChopperToLevel,
+} from './chopper.js';
+import { createChopperLook, resetChopperLook, updateChopperLook } from './chopperModel.js';
 import { createHeli, resetHeli, stepHeli, autopilot, jumpHeliToLevel } from './heli.js';
 import {
   createHeliRenderer, drawHeliFrame, heliVisibleRange, updateHeliFx, clearHeliFx,
@@ -18,6 +24,7 @@ import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
   createInput, getSteer, getFlightSteer, getBoost, bindBoostButton, clearInput, setControlMode,
   calibrateTilt, requestTiltPermission, getHeliHold,
+  updateChopperControls, chopperKeys, resetChopperControls, stickThumb, leverHeld,
 } from './input.js';
 import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
@@ -25,7 +32,7 @@ import {
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
-  playShot, playHit, playBoom, playGem, setRotorHum,
+  playShot, playHit, playBoom, playGem, setRotorHum, playLand, setChopperRotor,
 } from './audio.js';
 
 const DEG = Math.PI / 180;
@@ -40,14 +47,20 @@ const flightSteer = { x: 0, y: 0, joystick: null };
 const heli = createHeli(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x2545f491) || 3);
 const heliRenderer = createHeliRenderer();
 let heliHolding = false;
+const chopper = createChopper(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x7f4a7c15) || 4);
+const chopperLook = createChopperLook();
+const chopperPilot = { lever: 0, stickX: 0, stickY: 0 }; // menu preview autopilot
+const chopperKeyState = {};
 const save = loadSave(undefined, CONFIG.historyMax);
 bindBoostButton(input, $('btn-boost'));
 
-// Which game mode is selected: 'classic', 'flight' (3D) or 'heli' (Helicopter).
+// Which game mode is selected: 'classic', 'flight' (3D), 'heli' (Helicopter)
+// or 'chopper' (3D Heli).
 let gameMode = save.settings.mode;
 function cur() {
   if (gameMode === 'flight') return flight;
   if (gameMode === 'heli') return heli;
+  if (gameMode === 'chopper') return chopper;
   return game;
 }
 
@@ -84,7 +97,10 @@ const view = {
   showShip: true, hitboxes: false,
   camY: CONFIG.flightStartAltitude + CONFIG.flightCameraAbove, // 3D camera height
   joystick: { active: false, x0: 0, y0: 0, x: 0, y: 0 },
+  controls: null,  // 3D Heli: the lever and stick to draw
+  path: false,     // debug: draw the open path (3D Heli)
 };
+const chopperControlsView = { cc: input.chopper, hover: CONFIG.chopperHover, leverHeld: false, stick: null };
 
 function effectsOf(level) {
   return level.effects || {};
@@ -162,7 +178,7 @@ function randomBetween(a, b) {
 
 // Tilt the view toward the turn, easing in and out.
 function updateBank(dt) {
-  if (gameMode === 'heli') return; // the helicopter view doesn't bank
+  if (gameMode === 'heli' || gameMode === 'chopper') return; // helicopter views don't bank
   const target = (cur().vx / CONFIG.maxSteerSpeed) * CONFIG.bankMaxDeg * DEG;
   view.bank += (target - view.bank) * (1 - Math.exp(-CONFIG.bankEase * dt));
 }
@@ -188,7 +204,7 @@ function updateHud() {
   const g = cur();
   if (g.score !== lastScoreShown) {
     lastScoreShown = g.score;
-    $('hud-score').textContent = g.score;
+    $('hud-score').textContent = gameMode === 'chopper' ? withCommas(g.score) : g.score;
   }
   if (g.levelIndex !== lastLevelShown || lastLabel === '') {
     lastLevelShown = g.levelIndex;
@@ -199,7 +215,26 @@ function updateHud() {
     // Height meter: marker near the top when flying high.
     const t = (flight.y - CONFIG.flightMinAltitude) / (CONFIG.flightMaxAltitude - CONFIG.flightMinAltitude);
     $('alt-marker').style.top = `${((1 - t) * 100).toFixed(1)}%`;
+  } else if (gameMode === 'chopper') {
+    // Height from the ground (0) to the ceiling.
+    const t = Math.max(0, chopper.y - CONFIG.flightMinAltitude) / (CONFIG.flightMaxAltitude - CONFIG.flightMinAltitude);
+    $('alt-marker').style.top = `${((1 - t) * 100).toFixed(1)}%`;
+    const m = Math.round(chopper.multiplier * 10) / 10;
+    if (m !== lastMultShown) {
+      lastMultShown = m;
+      const el = $('hud-mult');
+      el.textContent = ` ×${m.toFixed(1)}`;
+      el.classList.toggle('max', m >= CONFIG.chopperMaxMultiplier);
+    }
+    const sp = chopper.topSpeed > 0 ? chopper.speed / chopper.topSpeed : 0;
+    $('speedbar-fill').style.width = `${(sp * 100).toFixed(1)}%`;
   }
+}
+let lastMultShown = -1;
+
+// 12345 → "12,345"
+function withCommas(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function showToast(text) {
@@ -232,8 +267,11 @@ const HOWTO_FLIGHT = {
   tilt: 'Tilt to fly: sideways to turn, toward/away to climb/dive. Guns fire by themselves: aim at drones.',
 };
 const HOWTO_HELI = 'Hold anywhere to fly up. Let go to drop. Turn your phone sideways for the best view.';
+const HOWTO_CHOPPER = 'Left thumb = lift, right thumb = fly. Turn your phone sideways.';
+const HOWTO_CHOPPER_RIGHT = 'Right thumb = lift, left thumb = fly. Turn your phone sideways.';
 function howto() {
   if (gameMode === 'heli') return HOWTO_HELI;
+  if (gameMode === 'chopper') return collectiveSideOf(save) === 'right' ? HOWTO_CHOPPER_RIGHT : HOWTO_CHOPPER;
   if (gameMode === 'flight') return save.settings.controls === 'tilt' ? HOWTO_FLIGHT.tilt : HOWTO_FLIGHT.touch;
   return HOWTO[save.settings.controls];
 }
@@ -247,6 +285,12 @@ function resetCurrent() {
     sizeHeliCave();
     resetHeli(heli, undefined, startLevelIndex());
     clearHeliFx(heliRenderer);
+  } else if (gameMode === 'chopper') {
+    resetChopper(chopper, undefined, startLevelIndex());
+    resetChopperLook(chopperLook);
+    resetChopperControls(input.chopper);
+    view.camY = chopper.y + CONFIG.chopperCameraAbove;
+    lastMultShown = -1;
   } else {
     resetGame(game, undefined, startLevelIndex());
   }
@@ -258,9 +302,14 @@ function renderModeSwitch() {
   for (const b of document.querySelectorAll('[data-mode]')) {
     b.setAttribute('aria-checked', String(b.dataset.mode === gameMode));
   }
-  $('altimeter').classList.toggle('hidden', gameMode !== 'flight');
-  $('btn-boost').classList.toggle('hidden', gameMode === 'heli'); // no boost in Helicopter mode
+  $('altimeter').classList.toggle('hidden', gameMode !== 'flight' && gameMode !== 'chopper');
+  $('altimeter').classList.toggle('alt-chopper', gameMode === 'chopper'); // top left, clear of the thumbs
+  $('hud-mult').classList.toggle('hidden', gameMode !== 'chopper');
+  $('speedbar').classList.toggle('hidden', gameMode !== 'chopper');
+  // No boost in either helicopter mode.
+  $('btn-boost').classList.toggle('hidden', gameMode === 'heli' || gameMode === 'chopper');
   input.heliMode = gameMode === 'heli';
+  input.chopperMode = gameMode === 'chopper';
   $('start-howto').textContent = howto();
 }
 
@@ -298,6 +347,7 @@ function startRun() {
   showBanner(performance.now());
   keepAwake(true);
   if (gameMode === 'heli') startHeliRun();
+  if (gameMode === 'chopper') startSidewaysRun();
 }
 
 function pause() {
@@ -341,6 +391,10 @@ function crash(now) {
   mode = 'crashing';
   crashAt = now;
   if (gameMode === 'heli') heliCrashBurst(heliRenderer, heli, shownPalette.ship);
+  if (gameMode === 'chopper') {
+    const why = { 'hard landing': 'Hard landing!', 'rotor strike': 'Rotor strike!' }[chopper.crashReason];
+    if (why) showToast(why);
+  }
   playCrash();
   vibrate(CONFIG.vibrateMs, save.settings.vibration);
 }
@@ -396,12 +450,18 @@ let wasLandscape = isLandscape();
 let turnHintTimer = 0;
 
 function startHeliRun() {
-  lockOrientation('landscape');
   $('heli-hold').classList.remove('hidden');
+  startSidewaysRun();
+}
+
+// Helicopter and 3D Heli runs ask for landscape (both still work upright).
+function startSidewaysRun() {
+  lockOrientation('landscape');
   clearTimeout(turnHintTimer);
+  const runMode = gameMode;
   // Give the screen a moment to turn before checking.
   turnHintTimer = setTimeout(() => {
-    if (gameMode !== 'heli' || (mode !== 'playing' && mode !== 'paused') || isLandscape()) return;
+    if (gameMode !== runMode || (mode !== 'playing' && mode !== 'paused') || isLandscape()) return;
     $('heli-turn').classList.remove('hidden');
     turnHintTimer = setTimeout(() => $('heli-turn').classList.add('hidden'), 3000);
   }, 600);
@@ -429,6 +489,7 @@ function onResize() {
   if (land) $('heli-turn').classList.add('hidden');
   // Turning the phone mid-run pauses, so you're never caught out.
   if (gameMode === 'heli' && mode === 'playing' && heli.started) pause();
+  if (gameMode === 'chopper' && mode === 'playing' && !(chopper.onGround && chopper.speed === 0)) pause();
 }
 
 // ---- Settings ------------------------------------------------------------------
@@ -663,12 +724,21 @@ function frame(now) {
       heliHolding = getHeliHold(input);
       events = stepHeli(heli, dt, heliHolding);
       if (heli.started) $('heli-hold').classList.add('hidden');
+    } else if (gameMode === 'chopper') {
+      const cc = input.chopper;
+      updateChopperControls(cc, dt, chopperKeys(input, chopperKeyState));
+      if (cc.hoverTick) {
+        cc.hoverTick = false;
+        vibrate(8, save.settings.vibration); // you can feel the HOVER mark
+      }
+      events = stepChopper(chopper, dt, cc.lever, cc.stickX, cc.stickY);
     } else {
       events = stepGame(game, dt, getSteer(input, renderer.w), getBoost(input));
     }
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (e.type === 'crash') crash(now);
+      else if (e.type === 'land') playLand();
       else if (e.type === 'ring') {
         playRing();
         showToast(`+${CONFIG.ringBonus}`);
@@ -697,6 +767,15 @@ function frame(now) {
       resetHeli(heli, undefined, startLevelIndex());
       clearHeliFx(heliRenderer);
     }
+  } else if (mode === 'menu' && gameMode === 'chopper') {
+    // Menu preview: the helicopter flies itself through the chosen level.
+    chopperAutopilot(chopper, chopperPilot);
+    stepChopper(chopper, dt, chopperPilot.lever, chopperPilot.stickX, chopperPilot.stickY);
+    if (chopper.crashed || chopper.levelIndex !== chopper.startLevel) {
+      resetChopper(chopper, undefined, startLevelIndex());
+      resetChopperLook(chopperLook);
+      view.camY = chopper.y + CONFIG.chopperCameraAbove;
+    }
   } else if (mode === 'crashing') {
     const t = now - crashAt;
     view.flash = Math.max(0, 1 - t / CONFIG.crashFlashMs);
@@ -716,10 +795,23 @@ function frame(now) {
   view.flash = Math.max(view.flash, updateLightning(now));
   // Rotor hum: only while a Helicopter run is on screen (not paused or crashed).
   setRotorHum(gameMode === 'heli' && mode === 'playing' && !heli.crashed, heliHolding && heli.started);
+  setChopperRotor(gameMode === 'chopper' && mode === 'playing' && !chopper.crashed, chopper.lever);
   if (gameMode === 'heli') {
     const fxDt = mode === 'paused' || mode === 'settings' || mode === 'history' ? 0 : realDt;
     updateHeliFx(heliRenderer, heli, CONFIG, fxDt, heliHolding && heli.started, heli.started && !heli.crashed);
     drawHeliFrame(renderer, heliRenderer, heli, view);
+  } else if (gameMode === 'chopper') {
+    const target = chopper.y + CONFIG.chopperCameraAbove;
+    view.camY += (target - view.camY) * (1 - Math.exp(-CONFIG.flightCameraFollow * realDt));
+    const lookDt = mode === 'playing' || mode === 'menu' || mode === 'crashing' || mode === 'over' ? realDt : 0;
+    updateChopperLook(chopperLook, chopper, CONFIG, lookDt);
+    const showControls = mode === 'playing' || mode === 'paused';
+    if (showControls) {
+      chopperControlsView.leverHeld = leverHeld(input.chopper);
+      chopperControlsView.stick = stickThumb(input.chopper);
+    }
+    view.controls = showControls ? chopperControlsView : null;
+    drawChopperFrame(renderer, flightRenderer, chopper, chopperLook, view);
   } else if (gameMode === 'flight') {
     // The camera follows climbs and dives with a slight lag.
     const target = flight.y + CONFIG.flightCameraAbove;
@@ -784,6 +876,7 @@ function setupDebug() {
     game.invincible = !game.invincible;
     flight.invincible = game.invincible;
     heli.invincible = game.invincible;
+    chopper.invincible = game.invincible;
     inv.classList.toggle('on', game.invincible);
   });
   const hit = make('button', 'Hitboxes', toggles);
@@ -804,6 +897,7 @@ function debugJump(index) {
   if (mode !== 'playing') startRun();
   if (gameMode === 'flight') jumpFlightToLevel(flight, index);
   else if (gameMode === 'heli') jumpHeliToLevel(heli, index);
+  else if (gameMode === 'chopper') jumpChopperToLevel(chopper, index);
   else jumpToLevel(game, index);
   lastLabel = '';
   startLevelFade(true);
@@ -815,7 +909,8 @@ function updateFps(now) {
   fpsFrames++;
   if (now - fpsSince >= 500) {
     const count = gameMode === 'flight' ? flight.spawner.boxes.length
-      : gameMode === 'heli' ? heli.spawner.obstacles.length : game.spawner.cubes.length;
+      : gameMode === 'chopper' ? chopper.spawner.boxes.length
+        : gameMode === 'heli' ? heli.spawner.obstacles.length : game.spawner.cubes.length;
     fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · obstacles ${count}`;
     fpsFrames = 0;
     fpsSince = now;

@@ -176,7 +176,8 @@ function approach(v, input, max, accel, friction, dt) {
 
 // Advance by dt seconds with the two controls (see the top of this file).
 // Returns this frame's events: { type: 'liftoff' | 'land' | 'level' | 'ring' |
-// 'crash' }. A crash also sets c.crashReason ('hard landing' or 'hit').
+// 'crash' }. A crash also sets c.crashReason ('hard landing', 'hit' or
+// 'rotor strike').
 export function stepChopper(c, dt, lever, stickX, stickY) {
   const cfg = c.config;
   const events = c.events;
@@ -279,7 +280,10 @@ export function stepChopper(c, dt, lever, stickX, stickY) {
   if (newScore > c.score) c.score = newScore;
 
   chopperHitboxes(c);
-  if (!c.invincible && chopperHits(c, c.spawner.boxes)) return crash(c, 'hit');
+  if (!c.invincible) {
+    if (findBoxCollision(c.hitbox, c.spawner.boxes)) return crash(c, 'hit');
+    if (findBoxCollision(c.rotorBox, c.spawner.boxes)) return crash(c, 'rotor strike');
+  }
   return events;
 }
 

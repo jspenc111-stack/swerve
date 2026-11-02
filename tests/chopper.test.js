@@ -193,7 +193,13 @@ test('body strikes and rotor strikes crash; rings do not', () => {
   p.speed = 5;
   for (let i = 0; i < 30 && !p.crashed; i++) stepChopper(p, DT, H, 0, 0);
   assert.ok(p.crashed);
-  assert.equal(p.crashReason, 'hit');
+  assert.equal(p.crashReason, 'rotor strike');
+  // …and one straight ahead hits the body.
+  const q = airborne(4);
+  q.spawner.boxes.push({ x: q.x, y: 0, z: q.distance + 1, w: 0.3, h: 9, d: 0.3 });
+  q.speed = 5;
+  for (let i = 0; i < 30 && !q.crashed; i++) stepChopper(q, DT, H, 0, 0);
+  assert.equal(q.crashReason, 'hit');
 
   // A ring isn't solid: flying through one scores.
   const r = airborne(4);

@@ -211,3 +211,74 @@ function stopHum() {
     h.lfo.stop(t + 0.3);
   } catch { /* ignore */ }
 }
+
+// 3D Heli: a soft thump when the skids touch down.
+export function playLand() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    tone(t, 'sine', 120, 60, 0.18, 0.35);
+    noiseBurst(t, 0.15, 'lowpass', 700, 150, 0.2);
+  } catch { /* ignore */ }
+}
+
+// 3D Heli rotor: a "thwop-thwop" pulse of filtered noise that beats faster as
+// the collective rises (about 7 to 14 beats a second). Call every frame; it
+// only changes when needed. on = false (paused, crashed, menu) stops it.
+let rotor = null;
+let rotorRate = 0;
+
+export function setChopperRotor(on, lever = 0) {
+  if (!on || !ready()) {
+    stopRotor();
+    return;
+  }
+  try {
+    if (!rotor) {
+      const src = ctx.createBufferSource();
+      src.buffer = noise;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 190;
+      filter.Q.value = 0.9;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001;
+      gain.gain.setTargetAtTime(0.16, ctx.currentTime, 0.15);
+      // The pulse: a slow wave pushing the volume up and down.
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 7;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.15;
+      lfo.connect(depth).connect(gain.gain);
+      src.connect(filter).connect(gain).connect(master);
+      src.start();
+      lfo.start();
+      rotor = { src, lfo, gain, filter };
+      rotorRate = 0;
+    }
+    const rate = 7 + 7 * Math.max(0, Math.min(1, lever));
+    if (Math.abs(rate - rotorRate) > 0.15) {
+      rotorRate = rate;
+      const t = ctx.currentTime;
+      rotor.lfo.frequency.setTargetAtTime(rate, t, 0.12);
+      rotor.filter.frequency.setTargetAtTime(170 + 60 * lever, t, 0.12);
+    }
+  } catch {
+    rotor = null;
+  }
+}
+
+function stopRotor() {
+  if (!rotor) return;
+  const r = rotor;
+  rotor = null;
+  try {
+    const t = ctx.currentTime;
+    r.gain.gain.cancelScheduledValues(t);
+    r.gain.gain.setTargetAtTime(0.0001, t, 0.05);
+    r.src.stop(t + 0.3);
+    r.lfo.stop(t + 0.3);
+  } catch { /* ignore */ }
+}

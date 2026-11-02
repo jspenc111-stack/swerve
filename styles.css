@@ -438,6 +438,26 @@ h2 { margin: 0 0 4px; font-size: 30px; }
 }
 
 
+/* ---- 3D Heli HUD: multiplier, speed bar, altimeter at the top left ---- */
+.hud-mult { font-size: 24px; font-weight: 800; opacity: 0.85; }
+.hud-mult.max { color: #ffd166; opacity: 1; text-shadow: 0 0 10px rgba(255, 196, 64, 0.9), 0 0 2px rgba(0, 0, 0, 0.4); }
+.speedbar {
+  width: 120px;
+  height: 6px;
+  margin: 5px auto 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+.speedbar-fill { height: 100%; width: 0; background: var(--accent); border-radius: 3px; }
+.altimeter.alt-chopper {
+  right: auto;
+  left: calc(14px + var(--safe-left));
+  top: calc(14px + var(--safe-top));
+  height: 22%;
+}
+
 /* ---- Helicopter mode: "Hold to fly" prompt and "turn sideways" hint ---- */
 .heli-hold {
   position: absolute;

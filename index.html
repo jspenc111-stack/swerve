@@ -21,8 +21,9 @@
   <!-- Playing: score, level name, pause button -->
   <div id="hud" class="hud hidden">
     <div class="hud-score">
-      <div id="hud-score">0</div>
+      <div><span id="hud-score">0</span><span id="hud-mult" class="hud-mult hidden"></span></div>
       <div id="hud-level" class="hud-level"></div>
+      <div id="speedbar" class="speedbar hidden" aria-hidden="true"><div id="speedbar-fill" class="speedbar-fill"></div></div>
     </div>
     <button id="btn-pause" class="icon-btn hud-pause" aria-label="Pause">⏸</button>
     <div id="altimeter" class="altimeter hidden" aria-hidden="true">
