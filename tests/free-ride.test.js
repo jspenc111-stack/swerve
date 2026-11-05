@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, resetGame, stepGame } from '../js/game.js';
 import { CONFIG, LEVELS } from '../js/config.js';
+import { setSpawnBand } from '../js/spawner.js';
 
 const FPS = 60;
 const SEEDS = 60;
@@ -20,7 +21,7 @@ const FIRST_LEVEL = { min: 1.5, max: 3.5 }; // Morning stays a gentle start
 // band: optional band half-width (null = the default).
 function coastTime(level, seed, band = null) {
   const game = createGame(CONFIG, LEVELS, seed);
-  if (band) game.spawner.band = band;
+  if (band) setSpawnBand(game.spawner, band);
   resetGame(game, seed, level);
   const hd = (CONFIG.shipLength * CONFIG.hitboxScale) / 2;
   const end = game.startDistance + CONFIG.levelLength / CONFIG.scorePerUnit;
@@ -44,14 +45,41 @@ function medianCoast(level, band = null) {
   return (times[SEEDS / 2 - 1] + times[SEEDS / 2]) / 2;
 }
 
-const defaultMedians = [];
+const WIDE_BAND = 62; // about what a phone's view needs
 
 LEVELS.forEach((level, i) => {
   test(`no free rides: ${level.name} (level ${i + 1})`, () => {
     const m = medianCoast(i);
-    defaultMedians[i] = m;
     const range = i === 0 ? FIRST_LEVEL : TARGET;
     assert.ok(m >= range.min && m <= range.max,
       `${level.name}: a pilot who never steers survives ${m.toFixed(2)} s (median); target ${range.min}–${range.max} s`);
+  });
+});
+
+// Filling the whole view with cubes must not change the difficulty: with a
+// wide band (and counts scaled to match) a non-steering pilot lasts about as long.
+//
+// The median is checked against the targets like above. To compare the two
+// bands we use the average over more seeds: on levels where the open path
+// sweeps across your line in waves, the coasting times bunch into two groups
+// (caught by the first sweep or the second), so a 60-seed median can flip
+// between them by chance. The average over 240 seeds is the steady measure.
+const COMPARE_SEEDS = 240;
+function averageCoast(level, band = null) {
+  let sum = 0;
+  for (let s = 1; s <= COMPARE_SEEDS; s++) sum += coastTime(level, s * 977, band);
+  return sum / COMPARE_SEEDS;
+}
+
+LEVELS.forEach((level, i) => {
+  test(`no free rides: ${level.name} is just as hard with a wide band (${WIDE_BAND})`, () => {
+    const wide = medianCoast(i, WIDE_BAND);
+    const range = i === 0 ? FIRST_LEVEL : TARGET;
+    assert.ok(wide >= range.min && wide <= range.max,
+      `${level.name}, wide band: ${wide.toFixed(2)} s (median); target ${range.min}–${range.max} s`);
+    const a = averageCoast(i);
+    const b = averageCoast(i, WIDE_BAND);
+    assert.ok(Math.abs(b - a) <= 0.25 * a,
+      `${level.name}: wide band averages ${b.toFixed(2)} s vs default ${a.toFixed(2)} s (must be within 25%)`);
   });
 });

@@ -5,6 +5,12 @@
 // no more sharply than the ship can steer at the current speed, and stays
 // near the player. No pattern is ever allowed to put a cube in the lane.
 //
+// Cubes appear across a band to each side of the player. The game sizes the
+// band from the real view (setSpawnBand), so the sides of the screen are never
+// bare; config.spawnBandHalfWidth is the minimum. Cube counts in the level
+// settings are "per 60 units of width" and scale with the band, so the field
+// is just as dense near you however wide the band is.
+//
 // Patterns with a `swing` setting keep pushing the open lane away from the
 // player's current line, so flying straight soon runs into the field.
 //
@@ -43,6 +49,7 @@ export function createSpawner(config, levels, seed = 1) {
     lastSpawned: 0,
     gateFlip: 1,
     goalX: null, // where a swinging lane is heading (null = pick a new goal)
+    band: config.spawnBandHalfWidth, // half-width of the area where cubes appear
     info: {},
   };
   resetSpawner(sp, seed, 0, 0);
@@ -65,6 +72,23 @@ export function resetSpawner(sp, seed, startZ, playerX) {
   sp.goalX = null;
 }
 
+// Width the level settings' cube counts are measured against (half of 60 units).
+const DENSITY_HALF_WIDTH = 30;
+
+// Set how far to each side of the player cubes appear (from the view size).
+// Never narrower than config.spawnBandHalfWidth.
+export function setSpawnBand(sp, halfWidth) {
+  const min = sp.config.spawnBandHalfWidth;
+  sp.band = halfWidth > min ? halfWidth : min;
+}
+
+// How many things to place in a row, for a setting given per 60 units of
+// width: the whole number, plus one more with probability equal to the rest.
+function scaledCount(sp, perRow) {
+  const n = (perRow * sp.band) / DENSITY_HALF_WIDTH;
+  return Math.floor(n) + (sp.random() < n % 1 ? 1 : 0);
+}
+
 // Call every frame. Removes passed cubes and fills the road ahead.
 export function updateSpawner(sp, playerZ, playerX, speed) {
   const cfg = sp.config;
@@ -83,7 +107,7 @@ export function updateSpawner(sp, playerZ, playerX, speed) {
 
 function cullCubes(sp, playerZ, playerX) {
   const behind = playerZ - sp.config.cameraBack - sp.config.cubeSize;
-  const side = sp.config.spawnBandHalfWidth + 20;
+  const side = sp.band + 20;
   const cubes = sp.cubes;
   let w = 0;
   for (let i = 0; i < cubes.length; i++) {
@@ -182,12 +206,13 @@ function scatterRow(sp, pattern, z0, playerX) {
   scatterCubes(sp, pattern.density, z0, playerX);
 }
 
-// Randomly placed cubes (about `density` per row), never on the open lane.
+// Randomly placed cubes (about `density` per row per 60 units of width),
+// never on the open lane.
 function scatterCubes(sp, density, z0, playerX) {
   const cfg = sp.config;
-  const count = Math.floor(density) + (sp.random() < density % 1 ? 1 : 0);
+  const count = scaledCount(sp, density);
   const keepOut = laneClearance(sp, cfg.minGapWidth);
-  const band = cfg.spawnBandHalfWidth;
+  const band = sp.band;
   for (let i = 0; i < count; i++) {
     const x = playerX + (sp.random() * 2 - 1) * band;
     const z = z0 + cfg.cubeSize / 2 + sp.random() * cfg.spawnStep;
@@ -202,11 +227,16 @@ function clustersRow(sp, pattern, z0, playerX) {
   const cfg = sp.config;
   steerLane(sp, pattern, playerX);
   advanceLane(sp, z0 + cfg.spawnStep, playerX);
-  if (sp.random() >= pattern.chance) return;
+  const islands = scaledCount(sp, pattern.chance);
+  for (let i = 0; i < islands; i++) island(sp, pattern, z0, playerX);
+}
+
+function island(sp, pattern, z0, playerX) {
+  const cfg = sp.config;
   const size = cfg.cubeSize;
   const half = size / 2;
   const keepOut = laneClearance(sp, cfg.minGapWidth);
-  const band = cfg.spawnBandHalfWidth;
+  const band = sp.band;
   const count = pattern.min + Math.floor(sp.random() * (pattern.max - pattern.min + 1));
   const withCentre = count >= 5;
   const ring = withCentre ? count - 1 : count;
@@ -280,8 +310,8 @@ function canyonRow(sp, pattern, z0, playerX) {
     }
   }
   // A few stray cubes outside the walls.
-  const extra = Math.floor(pattern.extra) + (sp.random() < pattern.extra % 1 ? 1 : 0);
-  const band = cfg.spawnBandHalfWidth;
+  const extra = scaledCount(sp, pattern.extra);
+  const band = sp.band;
   const outside = width / 2 + layers * size + half;
   for (let i = 0; i < extra; i++) {
     const x = playerX + (sp.random() * 2 - 1) * band;

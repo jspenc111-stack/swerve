@@ -7,7 +7,7 @@
 // minGapWidth wide.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSpawner, updateSpawner } from '../js/spawner.js';
+import { createSpawner, updateSpawner, setSpawnBand } from '../js/spawner.js';
 import { createGame, resetGame, stepGame } from '../js/game.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 import { levelForDistance, levelBaseSpeed } from '../js/levels.js';
@@ -16,6 +16,10 @@ const SECONDS = 120;
 const FPS = 60;
 const SEEDS = 20;
 const SLICE = 0.2;
+// Band half-widths to test: the default, and a wide one like a phone's real
+// view (the game widens the band to fill the screen).
+const WIDE_BAND = 62;
+const BANDS = [CONFIG.spawnBandHalfWidth, WIDE_BAND];
 
 const PATTERNS = {
   'scatter (sparse)': { type: 'scatter', density: 1.6 },
@@ -40,9 +44,10 @@ const PATTERNS = {
 const singleLevel = (pattern) => [{ name: 'Test', pattern, palette: LEVELS[0].palette }];
 
 // Run the spawner like the game does, with the player holding still at x = 0.
-// speedAt(distance) gives the forward speed.
-function generate(levels, seed, speedAt) {
+// speedAt(distance) gives the forward speed. band: cube band half-width.
+function generate(levels, seed, speedAt, band = CONFIG.spawnBandHalfWidth) {
   const sp = createSpawner(CONFIG, levels, seed);
+  setSpawnBand(sp, band);
   const all = [];
   let z = 0;
   let tooClose = 0;
@@ -59,7 +64,7 @@ function generate(levels, seed, speedAt) {
     }
   }
   all.sort((a, b) => a.z - b.z);
-  return { cubes: all, endZ: z, tooClose, maxSpeed };
+  return { cubes: all, endZ: z, tooClose, maxSpeed, band: sp.band };
 }
 
 // Subtract blocked intervals from [lo, hi]; returns free intervals.
@@ -87,10 +92,10 @@ function mergeInPlace(list) {
   list.length = w + 1;
 }
 
-function checkPassable({ cubes, endZ, maxSpeed }) {
+function checkPassable({ cubes, endZ, maxSpeed, band = CONFIG.spawnBandHalfWidth, startZ = CONFIG.fogDistance }) {
   const hw = (CONFIG.shipWidth * CONFIG.hitboxScale) / 2;
   const hd = (CONFIG.shipLength * CONFIG.hitboxScale) / 2;
-  const B = CONFIG.spawnBandHalfWidth;
+  const B = band;
   // How far sideways the ship can move per unit forward, with a safety margin
   // for the time it takes to build up sideways speed.
   const reach = (0.85 * CONFIG.maxSteerSpeed) / maxSpeed;
@@ -98,7 +103,7 @@ function checkPassable({ cubes, endZ, maxSpeed }) {
   let reachable = [[-B, B]];
   let first = 0;
   let narrowest = Infinity;
-  for (let z = CONFIG.fogDistance; z < endZ; z += SLICE) {
+  for (let z = startZ; z < endZ; z += SLICE) {
     while (first < cubes.length && cubes[first].z + cubes[first].size / 2 + hd <= z) first++;
     const blocked = [];
     for (let i = first; i < cubes.length && cubes[i].z - cubes[i].size / 2 - hd < z; i++) {
@@ -126,12 +131,12 @@ function checkPassable({ cubes, endZ, maxSpeed }) {
 }
 
 for (const [name, pattern] of Object.entries(PATTERNS)) {
-  for (const speed of [CONFIG.baseSpeed, CONFIG.baseSpeed + 45]) {
-    test(`fairness: ${name} at speed ${speed} always leaves a passable gap`, () => {
+  for (const band of BANDS) for (const speed of [CONFIG.baseSpeed, CONFIG.baseSpeed + 45]) {
+    test(`fairness: ${name} at speed ${speed}, band ${band}, always leaves a passable gap`, () => {
       const levels = singleLevel(pattern);
       let cubesSeen = 0;
       for (let seed = 1; seed <= SEEDS; seed++) {
-        const run = generate(levels, seed * 7717, () => speed);
+        const run = generate(levels, seed * 7717, () => speed, band);
         cubesSeen += run.cubes.length;
         assert.equal(run.tooClose, 0, `seed ${seed}: a cube appeared closer than the fog distance`);
         const result = checkPassable(run);
@@ -142,7 +147,7 @@ for (const [name, pattern] of Object.entries(PATTERNS)) {
   }
 }
 
-test('fairness: the real level list, played start to finish with real speeds', () => {
+for (const band of BANDS) test(`fairness: the real level list, played start to finish with real speeds, band ${band}`, () => {
   const info = {};
   const speedAt = (z) => levelBaseSpeed(levelForDistance(z, CONFIG, LEVELS, info), CONFIG);
   for (let seed = 1; seed <= 6; seed++) {
@@ -152,6 +157,7 @@ test('fairness: the real level list, played start to finish with real speeds', (
     let run;
     {
       const spawner = createSpawner(CONFIG, LEVELS, seed);
+      setSpawnBand(spawner, band);
       const all = [];
       let z = 0;
       let tooClose = 0;
@@ -168,7 +174,7 @@ test('fairness: the real level list, played start to finish with real speeds', (
         }
       }
       all.sort((a, b) => a.z - b.z);
-      run = { cubes: all, endZ: z, tooClose, maxSpeed };
+      run = { cubes: all, endZ: z, tooClose, maxSpeed, band };
     }
     assert.equal(run.tooClose, 0);
     const result = checkPassable(run);
@@ -191,9 +197,10 @@ test('the open lane follows a player who moves sideways', () => {
   for (const c of sp.cubes) assert.ok(Math.abs(c.x - px) < CONFIG.spawnBandHalfWidth + 20);
 });
 
-test('fairness: real play with boost switched on and off, starting from every level', () => {
+for (const band of BANDS) test(`fairness: real play with boost switched on and off, starting from every level, band ${band}`, () => {
   for (let start = 0; start < LEVELS.length; start++) {
     const game = createGame(CONFIG, LEVELS, 100 + start);
+    setSpawnBand(game.spawner, band);
     game.invincible = true;
     resetGame(game, 200 + start, start);
     const all = [];
@@ -215,7 +222,7 @@ test('fairness: real play with boost switched on and off, starting from every le
     all.sort((a, b) => a.z - b.z);
     // Shift so the check starts where this run's obstacles begin.
     const offset = game.startDistance;
-    const run = { cubes: all.map((c) => ({ ...c, z: c.z - offset })), endZ: game.distance - offset, tooClose, maxSpeed };
+    const run = { cubes: all.map((c) => ({ ...c, z: c.z - offset })), endZ: game.distance - offset, tooClose, maxSpeed, band };
     assert.equal(run.tooClose, 0);
     const result = checkPassable(run);
     assert.ok(result.ok, `start level ${start + 1}: blocked at z=${result.z?.toFixed(1)} (${result.why})`);

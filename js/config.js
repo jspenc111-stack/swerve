@@ -54,7 +54,7 @@ export const CONFIG = {
 
   // ---- Fairness (keep these sensible!) -----------------------------------
   minGapWidth: 2.0,         // narrowest gap ever allowed (2.5 × ship width)
-  spawnBandHalfWidth: 30,   // cubes appear this far to each side of the ship
+  spawnBandHalfWidth: 30,   // Classic cubes appear at least this far to each side (widened to fill the view)
   laneLeash: 10,            // the always-open path stays this close to the ship
   laneSlopeFactor: 0.65,    // how sharply the open path may bend (share of max steering at full boost)
   spawnStep: 4,             // distance between obstacle "rows" the spawner works in

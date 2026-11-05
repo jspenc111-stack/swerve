@@ -8,6 +8,7 @@
 
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
 import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
+import { setSpawnBand } from './spawner.js';
 import { createFlight, resetFlight, stepFlight, jumpFlightToLevel } from './flight.js';
 import { createFlightRenderer, drawFlightFrame, drawChopperFrame } from './render3d.js';
 import {
@@ -40,7 +41,9 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const renderer = createRenderer(canvas, CONFIG);
 const input = createInput(canvas, CONFIG);
+const MAX_CLASSIC_BAND = 160; // widest Classic cube band (see sizeClassicBand)
 const game = createGame(CONFIG, LEVELS, (Date.now() >>> 0) || 1);
+sizeClassicBand();
 const flight = createFlight(CONFIG, LEVELS, ((Date.now() >>> 0) ^ 0x5bd1e995) || 2);
 const flightRenderer = createFlightRenderer();
 const flightSteer = { x: 0, y: 0, joystick: null };
@@ -527,8 +530,21 @@ function sizeHeliCave() {
   heli.spawner.behind = range.behind + 6;
 }
 
+// Classic: make cubes appear across the whole view, so the far left and right
+// of the screen are never bare. How far the camera sees to each side at the
+// fog distance, plus 15% for the bank and Tilt-level roll, plus one second of
+// full steering. The spawner scales its cube counts so the field is just as
+// dense near you. Capped so a very wide window can't flood the phone.
+function sizeClassicBand() {
+  const depth = CONFIG.fogDistance + CONFIG.cameraBack;
+  const seen = ((renderer.w / 2) * depth) / Math.max(1, renderer.f);
+  const band = seen * 1.15 + CONFIG.maxSteerSpeed * 1;
+  setSpawnBand(game.spawner, Math.min(band, MAX_CLASSIC_BAND));
+}
+
 function onResize() {
   resizeRenderer(renderer);
+  sizeClassicBand();
   sizeHeliCave();
   const land = isLandscape();
   if (land === wasLandscape) return;
