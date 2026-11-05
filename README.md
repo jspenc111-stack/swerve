@@ -40,6 +40,7 @@ In every mode:
 - **Pick a starting level** on the menu, then tap Play.
 - **History** on the menu shows every run's score, level and when you played (Recent or Top scores).
 - Don't touch the obstacles. The game gets faster, and every level brings new colors and new obstacle patterns.
+- In Classic the field is full from the very first second, and the clear path keeps moving away from you, so you have to keep steering: you can't just fly straight.
 - After level 8 you go round again as "Lap 2", faster.
 - Tap ⏸ to pause. The game also pauses by itself if you switch apps.
 
