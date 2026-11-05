@@ -28,6 +28,7 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - Each level has `pattern` (Classic), `flight` (3D Flight, also used by 3D Heli) and `heli` (Helicopter) blocks.
   - 3D Heli's feel lives in the `chopper…` values.
   - "Make it harder/easier" means changing obstacle settings and speeds, **never** the fairness settings listed under Hard rules.
+  - In Classic, the main difficulty settings are `density` (how many cubes) and `swing` (how far the open path swings away from your line, so you must steer). Make the game harder or easier with these.
 - New obstacle patterns go in the mode's spawner, with a fairness test:
   - `js/spawner.js` for Classic,
   - `js/flightSpawner.js` for 3D Flight and 3D Heli,
@@ -57,6 +58,8 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - In 3D Flight, drones count as obstacles and must stay out of the open path.
   - In Helicopter and 3D Heli, the autopilot test must survive every level. In 3D Heli it flies at top speed using only the two thumb controls.
   - In 3D Heli, the hitbox **including the rotor** must fit within 80% of the minimum gap.
+  - In Classic, `swing` must be at most `laneLeash − 1`. The band where cubes appear must cover the whole visible field, with counts scaled so the density stays the same.
+- **No free rides in Classic.** The `free-ride` test checks that a pilot who never steers can't coast for long. If the owner asks for easier or harder Classic levels, change the target range in that test to match, and say so in the PR.
   - Don't loosen these settings to make the game harder: the fairness ones listed above, the hitbox scales, `laneLeash`/`laneSlopeFactor`/`flightLaneLeashY`, and `caveSlopeFactor`/`caveCurveFactor`.
 - Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner, any existing helicopter game, real helicopter models, or other existing games.
 - The service worker stays **network-first with cache fallback**. Don't switch to cache-first, or the owner gets stuck on old versions.
@@ -64,5 +67,6 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
 
 ## Quick reference
 - Run tests: `node --test`
+- Classic changes must not change 3D Flight, Helicopter or 3D Heli. Shared settings (`breatherBefore`, `breatherAfter`, `fogDistance`) affect all of them.
 - Debug view: open the site with `?debug=1`. It shows FPS, hitboxes, the invincible toggle and level skip; in Helicopter and 3D Heli, also the open path; in 3D Heli, also the lever, stick and multiplier values.
 - Live site: `https://<github-username>.github.io/swerve/`
