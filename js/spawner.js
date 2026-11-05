@@ -15,7 +15,9 @@
 // player's current line, so flying straight soon runs into the field.
 //
 // New cubes are only ever placed beyond the fog distance, so nothing pops up
-// right in front of the player.
+// right in front of the player. The one exception is the start of a run:
+// prefillSpawner lays out the field from the end of the level-start breather
+// to the fog distance before play begins, so the ground is never bare.
 
 import { levelForDistance, inBreather } from './levels.js';
 
@@ -87,6 +89,27 @@ export function setSpawnBand(sp, halfWidth) {
 function scaledCount(sp, perRow) {
   const n = (perRow * sp.band) / DENSITY_HALF_WIDTH;
   return Math.floor(n) + (sp.random() < n % 1 ? 1 : 0);
+}
+
+// Fill the field for the start of a run, before play begins: from the end of
+// the level-start breather (breatherAfter) out to the fog distance. The open
+// lane starts at the player. speed: the fastest the player could be going
+// (full boost), as in updateSpawner.
+export function prefillSpawner(sp, startZ, playerX, speed) {
+  const cfg = sp.config;
+  sp.maxSlope = (cfg.laneSlopeFactor * cfg.maxSteerSpeed) / Math.max(speed, 1);
+  const from = startZ + cfg.breatherAfter;
+  sp.nextZ = from;
+  sp.laneX = playerX;
+  sp.laneZ = from;
+  sp.prevLaneX = playerX;
+  sp.prevLaneZ = from;
+  const minZ = startZ + cfg.fogDistance;
+  while (sp.nextZ < minZ + cfg.spawnStep) {
+    spawnRow(sp, sp.nextZ, playerX);
+    sp.nextZ += cfg.spawnStep;
+  }
+  sp.lastSpawned = 0;
 }
 
 // Call every frame. Removes passed cubes and fills the road ahead.

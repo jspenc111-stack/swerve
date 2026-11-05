@@ -92,7 +92,9 @@ function mergeInPlace(list) {
   list.length = w + 1;
 }
 
-function checkPassable({ cubes, endZ, maxSpeed, band = CONFIG.spawnBandHalfWidth, startZ = CONFIG.fogDistance }) {
+// startZ: where to begin the check; startX (optional): the ship's exact
+// starting position (otherwise it may start anywhere in the band).
+function checkPassable({ cubes, endZ, maxSpeed, band = CONFIG.spawnBandHalfWidth, startZ = CONFIG.fogDistance, startX }) {
   const hw = (CONFIG.shipWidth * CONFIG.hitboxScale) / 2;
   const hd = (CONFIG.shipLength * CONFIG.hitboxScale) / 2;
   const B = band;
@@ -100,9 +102,10 @@ function checkPassable({ cubes, endZ, maxSpeed, band = CONFIG.spawnBandHalfWidth
   // for the time it takes to build up sideways speed.
   const reach = (0.85 * CONFIG.maxSteerSpeed) / maxSpeed;
   const needed = CONFIG.minGapWidth - 2 * hw - 1e-6; // gap, in ship-centre terms
-  let reachable = [[-B, B]];
+  let reachable = startX === undefined ? [[-B, B]] : [[startX, startX]];
   let first = 0;
   let narrowest = Infinity;
+  const settle = startX === undefined ? -Infinity : startZ + needed / (2 * reach) + SLICE;
   for (let z = startZ; z < endZ; z += SLICE) {
     while (first < cubes.length && cubes[first].z + cubes[first].size / 2 + hd <= z) first++;
     const blocked = [];
@@ -123,6 +126,12 @@ function checkPassable({ cubes, endZ, maxSpeed, band = CONFIG.spawnBandHalfWidth
     mergeInPlace(next);
     let widest = 0;
     for (const [a, b] of next) widest = Math.max(widest, b - a);
+    // From an exact start point the reachable area needs a moment to widen
+    // (the start is empty ground), so the gap-width check begins after that.
+    if (z < settle) {
+      reachable = next;
+      continue;
+    }
     narrowest = Math.min(narrowest, widest);
     if (widest < needed) return { ok: false, z, why: `widest reachable gap ${(widest + 2 * hw).toFixed(2)} < minGapWidth` };
     reachable = next;
@@ -203,7 +212,8 @@ for (const band of BANDS) test(`fairness: real play with boost switched on and o
     setSpawnBand(game.spawner, band);
     game.invincible = true;
     resetGame(game, 200 + start, start);
-    const all = [];
+    // The pre-filled field is there before play begins.
+    const all = game.spawner.cubes.map((c) => ({ x: c.x, z: c.z, size: c.size }));
     let tooClose = 0;
     let maxSpeed = 0;
     let boosting = false;
@@ -220,9 +230,12 @@ for (const band of BANDS) test(`fairness: real play with boost switched on and o
       }
     }
     all.sort((a, b) => a.z - b.z);
-    // Shift so the check starts where this run's obstacles begin.
+    // Check from the very start of the run, from the ship's real start position.
     const offset = game.startDistance;
-    const run = { cubes: all.map((c) => ({ ...c, z: c.z - offset })), endZ: game.distance - offset, tooClose, maxSpeed, band };
+    const run = {
+      cubes: all.map((c) => ({ ...c, z: c.z - offset })), endZ: game.distance - offset, tooClose, maxSpeed, band,
+      startZ: 0, startX: 0,
+    };
     assert.equal(run.tooClose, 0);
     const result = checkPassable(run);
     assert.ok(result.ok, `start level ${start + 1}: blocked at z=${result.z?.toFixed(1)} (${result.why})`);

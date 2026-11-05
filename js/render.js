@@ -9,6 +9,7 @@
 import { mixColor } from './levels.js';
 
 const FOG_STEPS = 24;
+const SMALL_CUBE_PX = 4; // cubes narrower than this on screen are drawn as one rectangle
 const DEG = Math.PI / 180;
 
 export function createRenderer(canvas, config) {
@@ -165,11 +166,12 @@ function drawCubes(r, cubes, camX, camZ, glow) {
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
 
   // Collect cubes in view, then sort far → near (painter's algorithm).
+  // Cubes at or beyond the fog distance are fully faded, so they're skipped.
   visible.length = 0;
   for (let i = 0; i < cubes.length; i++) {
     const c = cubes[i];
     const near = c.z - camZ - c.size / 2;
-    if (near < 0.5 || near > cfg.fogDistance + 4) continue;
+    if (near < 0.5 || near >= cfg.fogDistance) continue;
     const rx = c.x - camX;
     const sxNear = (Math.abs(rx) - c.size / 2) * f / near;
     if (sxNear > w * 1.2) continue; // off to the side
@@ -200,6 +202,14 @@ function drawCubes(r, cubes, camX, camZ, glow) {
     fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
     const fi = Math.round(fog * (FOG_STEPS - 1));
 
+    // Tiny, far-away cubes: one flat rectangle is enough (saves time with
+    // the full field of cubes).
+    if (x2 - x1 < SMALL_CUBE_PX) {
+      ctx.fillStyle = shades.front[fi];
+      ctx.fillRect(x1, byTop < yTop ? byTop : yTop, x2 - x1, yBot - (byTop < yTop ? byTop : yTop));
+      continue;
+    }
+
     // Side face (the one facing the camera).
     if (xl > 0) {
       ctx.fillStyle = shades.side[fi];
@@ -223,9 +233,10 @@ function drawCubes(r, cubes, camX, camZ, glow) {
     ctx.fillStyle = shades.front[fi];
     ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
 
-    // Subtle neon glow (e.g. the Night level).
-    if (glow > 0) {
-      ctx.globalAlpha = glow * (1 - fog) * 0.9;
+    // Subtle neon glow (e.g. the Night level). Skipped where it's too faint to see.
+    const glowAlpha = glow * (1 - fog) * 0.9;
+    if (glowAlpha > 0.04) {
+      ctx.globalAlpha = glowAlpha;
       ctx.strokeStyle = shades.edge[fi];
       ctx.lineWidth = Math.max(1, 0.06 * kn);
       ctx.strokeRect(x1, yTop, x2 - x1, yBot - yTop);

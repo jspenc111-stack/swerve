@@ -117,3 +117,39 @@ test('obstacles are always laid out for full-boost speed', () => {
   const expected = (CONFIG.laneSlopeFactor * CONFIG.maxSteerSpeed) / (g.baseSpeed * CONFIG.boostMultiplier);
   assert.ok(Math.abs(g.spawner.maxSlope - expected) < 1e-9);
 });
+
+test('a Classic run starts with a full field: cubes out to the fog distance, none in the start breather', () => {
+  for (let level = 0; level < LEVELS.length; level++) {
+    const g = createGame(CONFIG, LEVELS, 5);
+    resetGame(g, 300 + level, level);
+    const start = g.startDistance;
+    const cubes = g.spawner.cubes;
+    assert.ok(cubes.length > 20, `level ${level + 1}: the field is pre-filled (${cubes.length} cubes)`);
+    let nearest = Infinity;
+    let farthest = -Infinity;
+    for (const c of cubes) {
+      nearest = Math.min(nearest, c.z - c.size / 2);
+      farthest = Math.max(farthest, c.z);
+    }
+    assert.ok(nearest >= start + CONFIG.breatherAfter - 1e-9,
+      `level ${level + 1}: a cube at ${(nearest - start).toFixed(1)} is inside the start breather`);
+    assert.ok(farthest >= start + CONFIG.fogDistance - CONFIG.spawnStep,
+      `level ${level + 1}: cubes reach only ${(farthest - start).toFixed(1)} ahead`);
+    assert.ok(nearest <= start + CONFIG.breatherAfter + 2 * CONFIG.spawnStep + CONFIG.cubeSize * 4,
+      `level ${level + 1}: the field starts right after the breather`);
+  }
+});
+
+test('during play, nothing new ever appears closer than the fog distance', () => {
+  for (let level = 0; level < LEVELS.length; level++) {
+    const g = fresh();
+    resetGame(g, 400 + level, level);
+    for (let i = 0; i < 60 * 20; i++) {
+      stepGame(g, 1 / 60, Math.sin(i / 50), i % 200 < 100);
+      const sp = g.spawner;
+      for (let k = sp.cubes.length - sp.lastSpawned; k < sp.cubes.length; k++) {
+        assert.ok(sp.cubes[k].z >= g.distance + CONFIG.fogDistance, `level ${level + 1}: a cube popped up too close`);
+      }
+    }
+  }
+});
