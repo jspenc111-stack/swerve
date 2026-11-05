@@ -13,6 +13,11 @@ function checkPattern(p, where) {
     assert.equal(typeof p[k], 'number', `${where}: ${k} must be a number`);
     assert.ok(p[k] >= min, `${where}: ${k} too small`);
   };
+  if (p.swing !== undefined) {
+    assert.ok(p.type === 'scatter' || p.type === 'clusters', `${where}: swing only works on scatter and clusters`);
+    assert.equal(typeof p.swing, 'number', `${where}: swing must be a number`);
+    assert.ok(p.swing > 0 && p.swing <= CONFIG.laneLeash - 1, `${where}: swing must be above 0 and at most laneLeash − 1`);
+  }
   switch (p.type) {
     case 'scatter': num('density'); break;
     case 'clusters':

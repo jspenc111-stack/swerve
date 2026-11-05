@@ -20,7 +20,9 @@ const SLICE = 0.2;
 const PATTERNS = {
   'scatter (sparse)': { type: 'scatter', density: 1.6 },
   'scatter (very dense)': { type: 'scatter', density: 8 },
+  'scatter (dense, big swing)': { type: 'scatter', density: 8, swing: 9 },
   clusters: { type: 'clusters', chance: 1, min: 3, max: 6 },
+  'clusters (swing)': { type: 'clusters', chance: 1, min: 3, max: 6, swing: 9 },
   gates: { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth },
   'gates (long fences, busy)': { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth, wingCubes: 9, between: 3 },
   canyon: { type: 'canyon', width: CONFIG.minGapWidth, wallDepth: 6, extra: 2 },

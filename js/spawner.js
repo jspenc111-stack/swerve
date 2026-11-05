@@ -5,6 +5,9 @@
 // no more sharply than the ship can steer at the current speed, and stays
 // near the player. No pattern is ever allowed to put a cube in the lane.
 //
+// Patterns with a `swing` setting keep pushing the open lane away from the
+// player's current line, so flying straight soon runs into the field.
+//
 // New cubes are only ever placed beyond the fog distance, so nothing pops up
 // right in front of the player.
 
@@ -39,6 +42,7 @@ export function createSpawner(config, levels, seed = 1) {
     prevLaneZ: 0,
     lastSpawned: 0,
     gateFlip: 1,
+    goalX: null, // where a swinging lane is heading (null = pick a new goal)
     info: {},
   };
   resetSpawner(sp, seed, 0, 0);
@@ -58,6 +62,7 @@ export function resetSpawner(sp, seed, startZ, playerX) {
   sp.laneTarget = 0;
   sp.lastSpawned = 0;
   sp.gateFlip = 1;
+  sp.goalX = null;
 }
 
 // Call every frame. Removes passed cubes and fills the road ahead.
@@ -126,6 +131,27 @@ function wander(sp, chance) {
   if (sp.random() < chance) sp.laneTarget = (sp.random() * 2 - 1) * sp.maxSlope;
 }
 
+// Choose this row's lane bend. With `swing`, the lane heads for a goal on the
+// other side of the player's line, and picks a new one once it gets there.
+// Without it, the lane wanders gently. Either way advanceLane still applies
+// every fairness limit (slope, slope change, leash).
+function steerLane(sp, pattern, playerX) {
+  const swing = pattern.swing;
+  if (!(swing > 0)) {
+    wander(sp, 0.2);
+    return;
+  }
+  if (sp.goalX === null || Math.abs(sp.laneX - sp.goalX) <= 0.75) {
+    let side;
+    if (sp.laneX > playerX) side = -1;
+    else if (sp.laneX < playerX) side = 1;
+    else side = sp.random() < 0.5 ? -1 : 1;
+    sp.goalX = playerX + side * swing * (0.7 + 0.3 * sp.random());
+  }
+  const max = sp.maxSlope;
+  sp.laneTarget = clamp((sp.goalX - sp.laneX) * 0.25, -max, max);
+}
+
 // ---- Rows ------------------------------------------------------------------
 
 function spawnRow(sp, z0, playerX) {
@@ -151,7 +177,7 @@ function mixedPart(pattern, z) {
 }
 
 function scatterRow(sp, pattern, z0, playerX) {
-  wander(sp, 0.2);
+  steerLane(sp, pattern, playerX);
   advanceLane(sp, z0 + sp.config.spawnStep, playerX);
   scatterCubes(sp, pattern.density, z0, playerX);
 }
@@ -174,7 +200,7 @@ function scatterCubes(sp, density, z0, playerX) {
 // them, and open ground between the groups.
 function clustersRow(sp, pattern, z0, playerX) {
   const cfg = sp.config;
-  wander(sp, 0.2);
+  steerLane(sp, pattern, playerX);
   advanceLane(sp, z0 + cfg.spawnStep, playerX);
   if (sp.random() >= pattern.chance) return;
   const size = cfg.cubeSize;

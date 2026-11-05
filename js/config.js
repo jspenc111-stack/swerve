@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.5.1';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -178,13 +178,17 @@ export const CONFIG = {
 // Played in order, then loop back to the first as "Lap 2" (faster), and so on.
 //
 // pattern.type is one of: scatter, clusters, gates, canyon, mixed.
-//   scatter  — density: cubes per spawn row (more = harder)
-//   clusters — "islands" of separate cubes. chance: chance of an island per row;
-//              min/max: cubes per island
+//   scatter  — density: cubes per spawn row, per 60 units of width (more = harder)
+//   clusters — "islands" of separate cubes. chance: islands per row, per 60 units
+//              of width; min/max: cubes per island
+//   swing (scatter and clusters, optional) — how far the open path swings away
+//              from your line (units, at most laneLeash − 1); bigger = you must
+//              steer more. Without it the path just wanders gently.
 //   gates    — slalom gates. rowSpacing: distance between gates; gapWidth: size of
 //              the opening; wingCubes: fence posts on each side (optional, 5);
-//              between: loose cubes per row between gates (optional, 0)
-//   canyon   — width: corridor width; wallDepth: wall thickness; extra: stray cubes outside
+//              between: loose cubes per row between gates, per 60 units of width (optional, 0)
+//   canyon   — width: corridor width; wallDepth: wall thickness; extra: stray cubes
+//              outside, per row and per 60 units of width
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
 // flight: the obstacles for 3D Flight mode (3D Heli flies the same courses,
 //   without drones). type is one of:
@@ -216,7 +220,7 @@ export const CONFIG = {
 export const LEVELS = [
   {
     name: 'Morning',
-    pattern: { type: 'scatter', density: 1.8 },
+    pattern: { type: 'scatter', density: 2.4, swing: 4 },
     flight: { type: 'floaters', density: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     heli: { type: 'cave', opening: 9.5, wander: 0.5, roughness: 0.3, blockSpacing: 24, blockMin: 2.5, blockMax: 3.5 },
     palette: {
@@ -226,7 +230,7 @@ export const LEVELS = [
   },
   {
     name: 'Sunset',
-    pattern: { type: 'scatter', density: 2.9 },
+    pattern: { type: 'scatter', density: 3.4, swing: 4 },
     flight: {
       type: 'mixed', segmentLength: 150, ringSpacing: 70,
       sequence: [
@@ -242,7 +246,7 @@ export const LEVELS = [
   },
   {
     name: 'Lagoon',
-    pattern: { type: 'clusters', chance: 0.66, min: 3, max: 5 },
+    pattern: { type: 'clusters', chance: 0.8, min: 3, max: 6, swing: 5 },
     flight: { type: 'pillars', chance: 1, minHeight: 2, ringSpacing: 60 },
     heli: { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.35, spikeMin: 2, spikeMax: 4 },
     palette: {
@@ -252,7 +256,7 @@ export const LEVELS = [
   },
   {
     name: 'Gates',
-    pattern: { type: 'gates', rowSpacing: 16, gapWidth: 2.9, wingCubes: 4, between: 1 },
+    pattern: { type: 'gates', rowSpacing: 15, gapWidth: 2.9, wingCubes: 5, between: 1.5 },
     flight: { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2, ringSpacing: 66 },
     heli: { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
     palette: {
@@ -262,7 +266,7 @@ export const LEVELS = [
   },
   {
     name: 'Night',
-    pattern: { type: 'scatter', density: 4.0 },
+    pattern: { type: 'scatter', density: 4.8, swing: 5 },
     flight: { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     heli: { type: 'cave', opening: 7.6, wander: 0.8, roughness: 0.4, blockSpacing: 13, blockMin: 3, blockMax: 4.5 },
     palette: {
@@ -273,7 +277,7 @@ export const LEVELS = [
   },
   {
     name: 'Canyon',
-    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.7 },
+    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.5 },
     flight: { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4, ringSpacing: 48 },
     heli: { type: 'snake', opening: 5.4, wander: 1, roughness: 0.5 },
     palette: {
@@ -286,9 +290,9 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 160,
       sequence: [
-        { type: 'scatter', density: 3.1 },
+        { type: 'scatter', density: 3.4, swing: 5 },
         { type: 'gates', rowSpacing: 14.5, gapWidth: 2.9, wingCubes: 5, between: 0.8 },
-        { type: 'clusters', chance: 0.66, min: 3, max: 6 },
+        { type: 'clusters', chance: 0.8, min: 3, max: 6, swing: 5 },
       ],
     },
     flight: {
@@ -319,10 +323,10 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 180,
       sequence: [
-        { type: 'scatter', density: 3.8 },
-        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 0.9 },
+        { type: 'scatter', density: 4.4, swing: 6 },
+        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.5 },
         { type: 'gates', rowSpacing: 13.5, gapWidth: 2.7, wingCubes: 6, between: 1.2 },
-        { type: 'clusters', chance: 0.77, min: 3, max: 6 },
+        { type: 'clusters', chance: 0.9, min: 3, max: 6, swing: 6 },
       ],
     },
     flight: {
