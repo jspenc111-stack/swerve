@@ -6,7 +6,7 @@
 // The level depends on how far along the course you are (so you can start a
 // run at any level). The score counts only the distance covered in this run.
 
-import { createSpawner, resetSpawner, updateSpawner } from './spawner.js';
+import { createSpawner, resetSpawner, updateSpawner, prefillSpawner } from './spawner.js';
 import { levelForDistance, levelBaseSpeed, levelStartDistance } from './levels.js';
 import { shipHitbox, findCollision } from './collision.js';
 
@@ -46,6 +46,8 @@ export function resetGame(game, seed = game.seed + 1, startLevel = 0) {
   game.baseSpeed = levelBaseSpeed(game.info, cfg);
   game.speed = game.baseSpeed;
   resetSpawner(game.spawner, seed, start, 0);
+  // Start with a full field: only the level-start breather stays empty.
+  prefillSpawner(game.spawner, start, 0, game.baseSpeed * cfg.boostMultiplier);
   return game;
 }
 
@@ -135,6 +137,7 @@ export function jumpToLevel(game, absIndex) {
   game.baseSpeed = levelBaseSpeed(game.info, cfg);
   game.speed = game.baseSpeed;
   resetSpawner(game.spawner, game.seed + absIndex * 7919, start, game.x);
+  prefillSpawner(game.spawner, start, game.x, game.baseSpeed * cfg.boostMultiplier);
   game.events.length = 0;
   game.events.push(LEVEL_EVENT);
   return game.events;

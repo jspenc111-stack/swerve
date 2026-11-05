@@ -266,8 +266,9 @@ All numbers below are **starting values in `config.js`**, not fixed rules.
 ### Fairness (must be guaranteed and tested)
 - There must **always** be a path wide enough to get through. Gaps in gates and canyons must be at least `minGapWidth` (about 2.5× the ship width).
 - A random scatter never places cubes so tightly that the player can't get through.
-- New obstacles appear only beyond the fog distance, never right in front of the player.
+- New obstacles appear only beyond the fog distance, never right in front of the player. The one exception is the start of a Classic run: the field is pre-filled before play begins (§7), so those cubes already exist when you start.
 - The frame time is capped at 50 ms, so a phone hiccup can't teleport the ship into a cube.
+- **No free rides (Classic, since v1.5.1).** Fairness means there is always a way through, not that you can fly straight. With `swing` (§7) the open path keeps moving away from your line, so a pilot who never steers crashes within a few seconds. The `free-ride` test (§11) keeps it that way.
 
 ---
 
@@ -278,23 +279,36 @@ Every pattern is defined in config and uses a seeded random generator, so tests 
 
 | Pattern | What it looks like |
 |---|---|
-| `scatter` | Randomly placed cubes; how many is set by `density`. |
-| `clusters` | "Islands": small groups of 3–6 separate cubes (with a little room between them, never one solid clump) and open ground between groups. |
+| `scatter` | Randomly placed cubes; how many is set by `density` (cubes per row, per 60 units of width). Optional `swing`. |
+| `clusters` | "Islands": small groups of 3–6 separate cubes (with a little room between them, never one solid clump) and open ground between groups. `chance` = islands per row, per 60 units of width. Optional `swing`. |
 | `gates` | Slalom gates: an opening flanked by a short fence of spaced posts on each side (`wingCubes`, too close together to squeeze between). The opening swings left and right from gate to gate. Optional loose cubes between gates (`between`). |
 | `canyon` | Two walls of cubes forming a winding corridor. The path curves using smooth random turns. |
 | `mixed` | Alternates between the above every few seconds. |
 
-Obstacles spawn in a band around the player's current `x` (the field is effectively endless sideways). Cubes are removed once they're behind the camera or far off to the side.
+Obstacles spawn in a band around the player's current `x` (the field is effectively endless sideways). Cubes are removed once they're behind the camera or more than band + 20 units off to the side.
+
+**The open path and `swing` (v1.5.1).** The spawner steers an invisible open path (the guaranteed clear strip) ahead of the player. Without `swing` it wanders gently. With `swing` (scatter and clusters only, also inside `mixed`) it keeps moving away from the player's current line:
+- The spawner keeps a goal position `goalX` (reset at the start of each run).
+- When there's no goal, or the path is within 0.75 units of it, it picks a new goal on the other side of the player's line: `side` = −1 if the path is right of the player, +1 if left, random if level; `goalX = playerX + side × swing × (0.7 + 0.3 × random)`.
+- Every row, the path's target slope is `clamp((goalX − pathX) × 0.25, −maxSlope, +maxSlope)`.
+- All the fairness limits stay as they were: `maxSlope`, the slope-change limit, the leash and the keep-out area. `swing` must be above 0 and at most `laneLeash − 1`, so the goal is always inside the leash.
+- Gates and canyon don't use it (gates already alternate sides).
+
+**The view-sized band (v1.5.1).** Cubes appear across the whole visible field, so the far left and right of the screen are never bare. `main.js` works out how far the camera sees to each side at the fog distance (from the screen width, the focal length and `fogDistance + cameraBack`), multiplies it by 1.15 (for the bank and the Tilt roll), adds one second of full steering (`maxSteerSpeed`), and passes that to the spawner (`setSpawnBand`). `spawnBandHalfWidth` (30) is the minimum, and the band is capped at 160 so a very wide window can't flood the phone. On a portrait phone it comes to about 80. The counts in the level settings (`density`, `chance`, gates `between`, canyon `extra`) are per 60 units of width and scale with the band (the whole number, plus one more with probability equal to the remainder), so the field is just as dense near you whatever the band.
+
+**The pre-filled start (v1.5.1).** When a Classic run starts (and for the menu preview and the debug level jump), the field is filled right away from the end of the level-start breather (`breatherAfter`) out to the fog distance. Only that ~2 s breather stays empty. Mid-run level changes keep their breathers as before.
+
+**Drawing many cubes.** Cubes at or beyond the fog distance are fully faded and skipped; cubes narrower than about 4 px on screen are drawn as one flat rectangle; the Night glow is skipped where it would be too faint to see.
 
 ### Starting levels (in `config.js`)
 
 | # | Name | Pattern | Look |
 |---|---|---|---|
-| 1 | Morning | scatter, sparse | pale sky, white ground, grey cubes |
-| 2 | Sunset | scatter, denser | orange-pink sky, sand ground, coral cubes |
-| 3 | Lagoon | clusters | light blue sky, teal ground, white cubes |
+| 1 | Morning | scatter, light, swing 4 | pale sky, white ground, grey cubes |
+| 2 | Sunset | scatter, denser, swing 4 | orange-pink sky, sand ground, coral cubes |
+| 3 | Lagoon | clusters, swing 5 | light blue sky, teal ground, white cubes |
 | 4 | Gates | gates | lavender sky, cream ground, purple cubes |
-| 5 | Night | scatter, dense | near-black sky, dark ground, glowing neon cyan cubes (subtle glow) |
+| 5 | Night | scatter, dense, swing 5 | near-black sky, dark ground, glowing neon cyan cubes (subtle glow) |
 | 6 | Canyon | canyon | warm red-brown, desert palette |
 | 7 | Tilt | mixed | the whole view slowly rolls ±10° back and forth (steering is not reversed) |
 | 8 | Storm | mixed, fast | grey-green, with occasional brief "lightning" flashes |
@@ -380,8 +394,11 @@ These test the pure-logic modules.
   - overlap, no overlap and edge-touching cases;
   - the hitbox scale is applied.
 - **Fairness**:
-  - for each pattern, with many seeds, generate 2 minutes of obstacles and confirm a passable gap of at least `minGapWidth` always exists;
-  - no cube spawns closer than the fog distance.
+  - for each pattern (including `scatter (dense, big swing)` and `clusters (swing)`), with many seeds, generate 2 minutes of obstacles and confirm a passable gap of at least `minGapWidth` always exists, at the default band (30) and a wide band (62);
+  - real play from every level, pre-filled start included, checked from the ship's real starting position;
+  - no cube spawns closer than the fog distance during play.
+- **No free rides** (`free-ride.test.js`, Classic): for every level, 60 seeds, a pilot who never steers or boosts, timed from when the first cube reaches the ship. The median must be 0.4–3.0 s (Morning 1.5–3.5 s, a gentle start). Also at a wide band (62): the median must be in the same range, and the average over 240 seeds within 25% of the default band's. (The average is used for that comparison because on some levels the times bunch into two groups, one per sweep of the open path, so a 60-seed median can flip between them by chance.) If the owner asks for easier or harder Classic levels, change the target range to match.
+- **Pre-fill**: after a Classic reset, cubes already reach the fog distance and none are inside the start breather.
 - **3D Flight fairness**: for every level's layout, with many seeds, sweep a grid of reachable (sideways, height) positions through the obstacles and confirm a `minGapWidth` × `minGapHeight` opening always exists. Drones count as solid boxes covering their full sway. Every bonus ring can be flown through.
 - **Helicopter fairness** (`heli-fairness.test.js`): for every level, laps 1–3 and 20 seeds, 2 minutes of cave: nothing enters the open corridor, the corridor is always at least `heliMinGap` tall, the path's slope and bend limits hold, every gem is in the corridor, and the autopilot survives with the real physics at 60 fps (and once with uneven frame times up to `maxFrameTime`).
 - **Helicopter** (`heli.test.js`): climb and drop, vertical speed clamp, speed by level/lap/within a level, crashes on the ceiling, floor, a block, spike and gate, rotor near-misses don't crash, gems count once, nothing moves before the first hold, frame-time cap.
@@ -402,7 +419,7 @@ These test the pure-logic modules.
   - history, per-mode best scores and settings (including auto-fire) save and load;
   - old v1.3 saves load and gain the Helicopter fields; Helicopter runs save, filter and rank separately;
   - old v1.4 saves load unchanged and gain the 3D Heli fields (the new settings `collectiveSide` and `seenChopperTips` are only written once set; read them with `collectiveSideOf()` and `seenChopperTipsOf()`).
-- **Config check**: every level has all required fields (Classic, 3D Flight and Helicopter, with every opening and window at least `heliMinGap`), all colors are valid, and every 3D Heli value is present and sensible (e.g. `0 < chopperHover < 1`).
+- **Config check**: every level has all required fields (Classic, with `swing` optional and, when present, above 0 and at most `laneLeash − 1`; 3D Flight and Helicopter, with every opening and window at least `heliMinGap`), all colors are valid, and every 3D Heli value is present and sensible (e.g. `0 < chopperHover < 1`).
 - **App files**: every app file is in the service worker's precache list, and all paths are relative.
 
 ### Debug mode (hidden)
@@ -452,3 +469,4 @@ It isn't linked from anywhere. It helps the owner preview new levels quickly.
 - 3D Heli: **wind gusts** in Storm that push the helicopter sideways (fairness-tested).
 - 3D Heli: **landing challenges**: set down gently on a pad mid-level for a big bonus.
 - 3D Heli: **tail rotor pedals** (turning the nose) as an optional third control for experts.
+- The same **swinging open path** (`swing`, §7) for 3D Flight and 3D Heli, if they feel too easy to fly straight.
