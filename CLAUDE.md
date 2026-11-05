@@ -59,8 +59,8 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - In Helicopter and 3D Heli, the autopilot test must survive every level. In 3D Heli it flies at top speed using only the two thumb controls.
   - In 3D Heli, the hitbox **including the rotor** must fit within 80% of the minimum gap.
   - In Classic, `swing` must be at most `laneLeash − 1`. The band where cubes appear must cover the whole visible field, with counts scaled so the density stays the same.
-- **No free rides in Classic.** The `free-ride` test checks that a pilot who never steers can't coast for long. If the owner asks for easier or harder Classic levels, change the target range in that test to match, and say so in the PR.
   - Don't loosen these settings to make the game harder: the fairness ones listed above, the hitbox scales, `laneLeash`/`laneSlopeFactor`/`flightLaneLeashY`, and `caveSlopeFactor`/`caveCurveFactor`.
+- **No free rides in Classic.** The `free-ride` test checks that a pilot who never steers can't coast for long. If the owner asks for easier or harder Classic levels, change the target range in that test to match, and say so in the PR.
 - Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner, any existing helicopter game, real helicopter models, or other existing games.
 - The service worker stays **network-first with cache fallback**. Don't switch to cache-first, or the owner gets stuck on old versions.
 - Menus are portrait. Only Helicopter and 3D Heli runs ask for landscape, and both must still be playable upright.
