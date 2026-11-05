@@ -11,12 +11,20 @@
 // side-to-side sway (amp). They are solid, so they are also kept out of the
 // open lane, across their whole sway.
 // New obstacles and targets only appear beyond the fog distance.
+// 3D Heli reuses this spawner with its own settings and no drones.
 
 import { levelForDistance, inBreather } from './levels.js';
 import { makeRandom } from './spawner.js';
 
-export function createFlightSpawner(config, levels, seed = 1) {
+// options (3D Heli uses these; 3D Flight uses the defaults):
+//   drones: false — no drones at all
+//   recordPath: true — keep the open lane's centre line ahead of the player
+//     in sp.path ({ z, x, y } points), for the 3D Heli autopilot
+export function createFlightSpawner(config, levels, seed = 1, options = {}) {
   const sp = {
+    drones: options.drones !== false,
+    recordPath: !!options.recordPath,
+    path: [],
     config,
     levels,
     boxes: [],
@@ -53,6 +61,8 @@ export function resetFlightSpawner(sp, seed, startZ, playerX, playerY) {
   sp.lastSpawned = 0;
   sp.lastRings = 0;
   sp.lastTargets = 0;
+  sp.path.length = 0;
+  if (sp.recordPath) sp.path.push({ z: L.z, x: L.x, y: L.y });
 }
 
 // The lowest/highest the lane's centre may go, so the whole opening fits.
@@ -106,6 +116,11 @@ function cull(sp, playerZ, playerX) {
     if (t.alive && t.z >= behind && Math.abs(t.x0 - playerX) <= side) targets[w++] = t;
   }
   targets.length = w;
+  // Keep one lane point behind the player so the path can be looked up there.
+  const path = sp.path;
+  let drop = 0;
+  while (drop + 1 < path.length && path[drop + 1].z < behind) drop++;
+  if (drop > 0) path.splice(0, drop);
 }
 
 // ---- The open lane ---------------------------------------------------------
@@ -135,6 +150,7 @@ function advanceLane(sp, z, playerX, playerY) {
   L.x += L.sx * dz;
   L.y = clamp(L.y + L.sy * dz, laneMinY(sp), laneMaxY(sp));
   L.z = z;
+  if (sp.recordPath) sp.path.push({ z: L.z, x: L.x, y: L.y });
 }
 
 // Lane centre at depth z: straight line through the last two lane points.
@@ -195,7 +211,7 @@ function spawnRow(sp, z0, playerX, playerY) {
   // Bonus rings sit in the middle of the open lane, so they can always be reached.
   // Drones to shoot, every `targetSpacing` (a level can set its own).
   const tSpacing = outer.targetSpacing ?? cfg.targetSpacing;
-  if (tSpacing > 0) {
+  if (tSpacing > 0 && sp.drones) {
     const tz = Math.ceil(z0 / tSpacing) * tSpacing;
     if (tz >= z0 && tz < z1) placeTarget(sp, tz);
   }

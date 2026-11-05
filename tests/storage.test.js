@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, GAME_MODES,
+  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -205,7 +205,7 @@ test('an old v1.3 save loads unchanged and gains the Helicopter fields', () => {
 test('Helicopter runs save, filter and rank separately', () => {
   const store = memoryStorage();
   const s = defaultSave();
-  assert.deepEqual(GAME_MODES, ['classic', 'flight', 'heli']);
+  assert.deepEqual(GAME_MODES, ['classic', 'flight', 'heli', 'chopper']); // v1.5 added 3D Heli
   recordRun(s, 900, 3, 1, 100, 100, 'classic');
   assert.equal(recordRun(s, 400, 2, 1, 200, 100, 'heli'), true);
   assert.equal(recordRun(s, 300, 1, 1, 300, 100, 'heli'), false);
@@ -248,4 +248,15 @@ test('resetting best scores resets every mode and keeps the history', () => {
     assert.equal(s[k], fresh[k], k);
   }
   assert.equal(s.history.length, 3);
+});
+
+test('the 3D Heli collective side saves, and defaults to left', () => {
+  assert.equal(collectiveSideOf(defaultSave()), 'left');
+  const store = memoryStorage();
+  const s = defaultSave();
+  s.settings.collectiveSide = 'right';
+  writeSave(s, store);
+  assert.equal(collectiveSideOf(loadSave(store)), 'right');
+  const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { collectiveSide: 'middle' } }) }));
+  assert.equal(collectiveSideOf(bad), 'left');
 });

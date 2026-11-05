@@ -3,10 +3,11 @@
 Rules for any Claude Code session working in this repo. Read `SPEC.md` for the full design. Change specs live in `specs/`.
 
 ## What this is
-Swerve is a personal one-player arcade game with three modes:
+Swerve is a personal one-player arcade game with four modes:
 - **Classic**: steer an arrow across a field and dodge cubes.
 - **3D Flight**: fly a jet up, down and around 3D obstacles, and shoot drones.
-- **Helicopter**: a side-view cave; hold to rise, let go to drop.
+- **Helicopter**: a side-view cave; hold to rise, let go to drop. Its id in code is `heli`.
+- **3D Heli**: a two-thumb helicopter on the 3D Flight courses. The left thumb is the collective (lift, and it stays put); the right thumb is the cyclic (fly forward and slide). Its id in code is `chopper`.
 
 It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The owner is **not a developer**.
 
@@ -24,14 +25,21 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
 
 ## Where changes go
 - **Tuning requests** go in `js/config.js` only, whenever possible. Examples: faster/slower, easier/harder, new colors, a new level, a different level order.
-  - Each level has `pattern` (Classic), `flight` (3D Flight) and `heli` (Helicopter) blocks.
+  - Each level has `pattern` (Classic), `flight` (3D Flight, also used by 3D Heli) and `heli` (Helicopter) blocks.
+  - 3D Heli's feel lives in the `chopper…` values.
   - "Make it harder/easier" means changing obstacle settings and speeds, **never** the fairness settings listed under Hard rules.
 - New obstacle patterns go in the mode's spawner, with a fairness test:
   - `js/spawner.js` for Classic,
-  - `js/flightSpawner.js` for 3D Flight,
+  - `js/flightSpawner.js` for 3D Flight and 3D Heli,
   - `js/caveSpawner.js` for Helicopter.
-- Keep game logic free of DOM and canvas code, so it stays testable in Node. The game logic files are `game.js`, `flight.js`, `heli.js`, `levels.js`, `spawner.js`, `flightSpawner.js`, `caveSpawner.js` and `collision.js`.
-- Drawing: Classic in `render.js`, 3D Flight in `render3d.js`, Helicopter in `renderHeli.js`. `main.js` runs all three modes.
+- Keep game logic free of DOM and canvas code, so it stays testable in Node. The game logic files are `game.js`, `flight.js`, `heli.js`, `chopper.js`, `levels.js`, `spawner.js`, `flightSpawner.js`, `caveSpawner.js` and `collision.js`.
+- Drawing:
+  - Classic in `render.js`;
+  - 3D Flight and 3D Heli in `render3d.js` (the helicopter model is in `chopperModel.js`);
+  - Helicopter in `renderHeli.js`.
+
+  `main.js` runs all four modes.
+- A change to `flightSpawner.js` affects both 3D Flight and 3D Heli. Run both modes' fairness tests.
 
 ## Hard rules
 - Plain HTML, CSS and JS only: no frameworks, no build step, no npm runtime dependencies.
@@ -44,16 +52,17 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
 - The only stored data is the `swerve:v1` key in localStorage: best score and level per mode, settings, and score history. Don't add more without the owner's say-so.
 - The repo is **public**. Never commit personal information (names, emails, locations, anything about the owner).
 - **Fairness: there is always a way through.**
-  - Every obstacle pattern must leave a passable gap: `minGapWidth`, plus `minGapHeight` in 3D Flight and `heliMinGap` in Helicopter.
+  - Every obstacle pattern must leave a passable gap: `minGapWidth`, plus `minGapHeight` in 3D Flight and 3D Heli, and `heliMinGap` in Helicopter.
   - The fairness tests must cover every pattern.
   - In 3D Flight, drones count as obstacles and must stay out of the open path.
-  - In Helicopter, the open path must respect the slope and bend limits, and the autopilot test must survive every level.
+  - In Helicopter and 3D Heli, the autopilot test must survive every level. In 3D Heli it flies at top speed using only the two thumb controls.
+  - In 3D Heli, the hitbox **including the rotor** must fit within 80% of the minimum gap.
   - Don't loosen these settings to make the game harder: the fairness ones listed above, the hitbox scales, `laneLeash`/`laneSlopeFactor`/`flightLaneLeashY`, and `caveSlopeFactor`/`caveCurveFactor`.
-- Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner, any existing helicopter game, or other existing games.
+- Original content only. Don't use names, art, sounds or text from Cubefield, Cube Runner, any existing helicopter game, real helicopter models, or other existing games.
 - The service worker stays **network-first with cache fallback**. Don't switch to cache-first, or the owner gets stuck on old versions.
-- Menus are portrait. Only a Helicopter run asks for landscape, and it must still be playable upright.
+- Menus are portrait. Only Helicopter and 3D Heli runs ask for landscape, and both must still be playable upright.
 
 ## Quick reference
 - Run tests: `node --test`
-- Debug view: open the site with `?debug=1` (FPS, hitboxes, invincible, level skip; in Helicopter mode, also the open path)
+- Debug view: open the site with `?debug=1`. It shows FPS, hitboxes, the invincible toggle and level skip; in Helicopter and 3D Heli, also the open path; in 3D Heli, also the lever, stick and multiplier values.
 - Live site: `https://<github-username>.github.io/swerve/`

@@ -6,6 +6,7 @@
 // The camera follows the jet sideways exactly and up/down with a slight lag.
 
 import { mixColor } from './levels.js';
+import { drawChopperModel, drawHelipad, drawDownwash } from './chopperModel.js';
 
 const FOG_STEPS = 24;
 const SHADE_STEPS = 24;
@@ -144,12 +145,11 @@ function drawGrid(r, p, cam) {
 
 // The jet's shadow straight below it: smaller and fainter the higher you fly.
 const S = {};
-function drawShadow(r, f, cam) {
-  const cfg = r.config;
+function drawShadow(r, f, cam, span = r.config.flightShipSpan) {
   proj(r, cam, f.x, 0, f.distance, S);
   const k = r.f / (f.distance - cam.z);
   const height = f.y;
-  const rx = (cfg.flightShipSpan / 2) * k * (1 - Math.min(0.5, height / 30));
+  const rx = (span / 2) * k * (1 - Math.min(0.5, height / 30));
   const ctx = r.ctx;
   ctx.fillStyle = `rgba(0,0,0,${(0.22 * (1 - Math.min(0.75, height / 12))).toFixed(3)})`;
   ctx.beginPath();
@@ -448,8 +448,7 @@ function drawReticle(r, f, cam) {
   ctx.globalAlpha = 1;
 }
 
-function drawHitbox(r, f, cam) {
-  const hb = f.hitbox;
+function drawHitbox(r, f, cam, hb = f.hitbox) {
   if (!hb || !hb.halfW) return;
   const ctx = r.ctx;
   ctx.strokeStyle = '#00ff66';
@@ -479,6 +478,71 @@ function drawJoystick(r, j) {
   ctx.arc(j.x0 + dx, j.y0 + dy, R * 0.38, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
+}
+
+// ---- 3D Heli -----------------------------------------------------------------
+// Same world as 3D Flight (sky, ground, grid, blocks, rings), plus the
+// helipad, the downwash and the helicopter. The chase camera sits behind and
+// above (chopperCameraBack / chopperCameraAbove); it follows sideways moves
+// exactly and up/down moves with a slight lag (view.camY, set by main.js).
+
+// view: palette, roll, shakeX, shakeY, flash, glow, camY, hitboxes, showShip,
+// path (debug: draw the open path), controls: { cc, hover, leverHeld, stick }
+export function drawChopperFrame(r, s, c, look, view) {
+  const { ctx, config: cfg, w, h } = r;
+  const p = view.palette;
+  updateShades(s, p);
+  const cam = {
+    x: c.x,
+    y: view.camY,
+    z: c.distance - cfg.chopperCameraBack,
+    hY: h * cfg.flightHorizonRatio,
+  };
+
+  ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
+  ctx.translate(view.shakeX || 0, view.shakeY || 0);
+  const angle = view.roll || 0;
+  const pivotY = h * 0.6;
+  ctx.translate(r.cx, pivotY);
+  ctx.rotate(angle);
+  ctx.translate(-r.cx, -pivotY);
+
+  drawSkyAndGround(r, s, p, cam);
+  if (p.grid) drawGrid(r, p, cam);
+  drawHelipad(r, cam, c.padZ);
+  drawDownwash(r, cam, c, look);
+  drawShadow(r, c, cam, cfg.chopperLength * 0.7);
+  drawWorld(r, s, c, cam, view.glow || 0);
+  if (view.path) drawPath(r, c, cam);
+  if (view.hitboxes) { drawHitbox(r, c, cam, c.hitbox); drawHitbox(r, c, cam, c.rotorBox); }
+  if (view.showShip !== false) drawChopperModel(r, s, cam, c, look, p);
+
+  ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
+  const ctl = view.controls;
+  if (ctl) drawChopperControls(r, ctl.cc, ctl.hover, ctl.leverHeld, ctl.stick);
+  if (view.flash > 0) {
+    ctx.globalAlpha = Math.min(1, view.flash);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Debug: the always-open path ahead, as a line of small squares (each the
+// minimum opening, minGapWidth × minGapHeight).
+function drawPath(r, c, cam) {
+  const ctx = r.ctx;
+  const cfg = r.config;
+  const path = c.spawner.path;
+  ctx.strokeStyle = 'rgba(0,255,140,0.8)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < path.length; i += 2) {
+    const q = path[i];
+    if (q.z - cam.z <= NEAR + 1 || q.z - cam.z > cfg.fogDistance) continue;
+    proj(r, cam, q.x - cfg.minGapWidth / 2, q.y + cfg.minGapHeight / 2, q.z, RA);
+    proj(r, cam, q.x + cfg.minGapWidth / 2, q.y - cfg.minGapHeight / 2, q.z, RB);
+    ctx.strokeRect(RA.x, RA.y, RB.x - RA.x, RB.y - RA.y);
+  }
 }
 
 // ---- The jet ---------------------------------------------------------------
@@ -679,4 +743,99 @@ function drawJet(r, s, p, f, cam) {
     ctx.fill();
   }
   ctx.globalCompositeOperation = 'source-over';
+}
+
+// ---- 3D Heli: the two-thumb controls ---------------------------------------
+// The collective is a tall slider near its screen edge (about 60% of the
+// screen height) with a handle and a HOVER mark. The cyclic is a floating
+// joystick where the thumb landed; when no thumb is on it, a faint ring shows
+// where to put one.
+
+// Where the collective slider sits: { x, top, bottom } in screen pixels.
+export function collectiveSlider(r, side, out = {}) {
+  const margin = Math.max(34, Math.min(64, r.w * 0.06));
+  out.x = side === 'right' ? r.w - margin : margin;
+  const len = r.h * 0.6;
+  out.top = r.h * 0.3;
+  out.bottom = Math.min(r.h - 34, out.top + len);
+  return out;
+}
+
+const SL = {};
+export function drawChopperControls(r, cc, hover, leverHeld, stick) {
+  const ctx = r.ctx;
+  const s = collectiveSlider(r, cc.side, SL);
+  const yOf = (v) => s.bottom - (s.bottom - s.top) * v;
+  ctx.save();
+  ctx.lineCap = 'round';
+  // Track.
+  ctx.globalAlpha = leverHeld ? 0.55 : 0.4;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.moveTo(s.x, s.top); ctx.lineTo(s.x, s.bottom); ctx.stroke();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(s.x, s.top); ctx.lineTo(s.x, s.bottom); ctx.stroke();
+  // Filled part up to the lever.
+  const yl = yOf(cc.lever);
+  ctx.globalAlpha = 0.75;
+  ctx.strokeStyle = cc.lever >= hover ? '#7ee08a' : '#ffb35c';
+  ctx.beginPath(); ctx.moveTo(s.x, s.bottom); ctx.lineTo(s.x, yl); ctx.stroke();
+  // HOVER mark.
+  const yh = yOf(hover);
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(s.x - 14, yh); ctx.lineTo(s.x + 14, yh); ctx.stroke();
+  ctx.font = '700 11px system-ui, -apple-system, Roboto, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = cc.side === 'right' ? 'right' : 'left';
+  const tx = cc.side === 'right' ? s.x - 18 : s.x + 18;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.strokeText('HOVER', tx, yh);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('HOVER', tx, yh);
+  // Handle.
+  ctx.globalAlpha = leverHeld ? 0.95 : 0.8;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(s.x - 22, yl - 9, 44, 18, 9);
+  else ctx.rect(s.x - 22, yl - 9, 44, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(s.x - 12, yl - 1, 24, 2);
+  // "LIFT" under the slider.
+  ctx.globalAlpha = 0.7;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 3;
+  ctx.strokeText('LIFT', s.x, s.bottom + 16);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('LIFT', s.x, s.bottom + 16);
+  ctx.restore();
+
+  // The cyclic: the floating joystick, or a faint ring where it would go.
+  if (stick) {
+    drawJoystick(r, { x0: stick.x0, y0: stick.y0, x: stick.x, y: stick.y });
+  } else {
+    const R = r.config.joystickRadiusPx;
+    const gx = cc.side === 'right' ? Math.max(R + 20, r.w * 0.3) : Math.min(r.w - R - 20, r.w * 0.7);
+    const gy = Math.min(r.h - R - 24, r.h * 0.68);
+    ctx.globalAlpha = 0.16;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(gx, gy, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(gx + cc.stickX * R, gy - cc.stickY * R, R * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 }
