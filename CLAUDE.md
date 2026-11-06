@@ -28,7 +28,13 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - Each level has `pattern` (Classic), `flight` (3D Flight, also used by 3D Heli) and `heli` (Helicopter) blocks.
   - 3D Heli's feel lives in the `chopper…` values.
   - "Make it harder/easier" means changing obstacle settings and speeds, **never** the fairness settings listed under Hard rules.
-  - In Classic, the main difficulty settings are `density` (how many cubes) and `swing` (how far the open path swings away from your line, so you must steer). Make the game harder or easier with these.
+  - In Classic, the main difficulty settings are `density` (how many cubes) and `swing` (how far the open path swings away from your line, so you must steer), plus `classicSpeedFactor` (Classic-only speed). Make the game harder or easier with these.
+  - **Each mode has its own speed and control settings. Changing one mode's feel must not change another's.**
+    - Classic: `classicSpeedFactor`, `steerAccel`/`maxSteerSpeed`/`steerFriction`, tilt and drag.
+    - 3D Flight: `flightSteerAccel`/`flightMaxSteerSpeed`/`flightSteerFriction`, `climbAccel`/`flightMaxClimbSpeed`/`climbFriction`, `flightReverseBoost`, `flightJoystickRadiusPx` and `flightMaxAltitude`.
+    - 3D Heli: the `chopper…` values, `joystickRadiusPx` and `chopperMaxAltitude`.
+    - `baseSpeed` and `speedPerLevel` are shared by every mode except Helicopter.
+  - 3D Flight's course is laid out with `maxSteerSpeed`/`maxClimbSpeed` (the course values), not the jet's own maximums. Making the jet more agile doesn't change the courses.
 - New obstacle patterns go in the mode's spawner, with a fairness test:
   - `js/spawner.js` for Classic,
   - `js/flightSpawner.js` for 3D Flight and 3D Heli,
