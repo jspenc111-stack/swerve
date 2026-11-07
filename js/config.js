@@ -71,8 +71,8 @@ export const CONFIG = {
   flightShipHeight: 0.36,
   flightHitboxScale: 0.7,     // jet hitbox is smaller than the drawing (fair near-misses)
   flightMinAltitude: 0.6,     // lowest you can fly
-  flightMaxAltitude: 9,       // highest you can fly (the ceiling)
-  flightStartAltitude: 3,
+  flightMaxAltitude: 12,      // highest you can fly (the ceiling)
+  flightStartAltitude: 4,
   climbAccel: 80,             // how quickly up/down speed builds
   maxClimbSpeed: 8,           // up/down speed the course is laid out for (the jet's own top speed is flightMaxClimbSpeed)
   climbFriction: 10,          // how quickly up/down drifting stops when you let go
@@ -172,6 +172,7 @@ export const CONFIG = {
   chopperScorePerUnit: 1,     // points per unit of distance at ×1
   chopperMaxMultiplier: 2,    // score multiplier at top speed (×1 at half speed or slower)
   chopperLevelDistance: 420,  // distance per level (about 25 s at top speed)
+  chopperMaxAltitude: 9,      // 3D Heli's ceiling (its own, so 3D Flight's taller sky doesn't change it)
 
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
@@ -204,7 +205,8 @@ export const CONFIG = {
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
 // flight: the obstacles for 3D Flight mode (3D Heli flies the same courses,
 //   without drones). type is one of:
-//   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size
+//   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size;
+//              chopperDensity: blocks per row in 3D Heli (its sky is lower, so fewer)
 //   pillars  — towers rising from the ground. chance: per row; minHeight: shortest tower
 //   frames   — walls with a window to fly through. spacing: distance between walls
 //              (a small spacing makes a tunnel); holeWidth/holeHeight: window size;
@@ -233,7 +235,7 @@ export const LEVELS = [
   {
     name: 'Morning',
     pattern: { type: 'scatter', density: 2.45, swing: 4 },
-    flight: { type: 'floaters', density: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
+    flight: { type: 'floaters', density: 2.4, chopperDensity: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     heli: { type: 'cave', opening: 9.5, wander: 0.5, roughness: 0.3, blockSpacing: 24, blockMin: 2.5, blockMax: 3.5 },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
@@ -246,7 +248,7 @@ export const LEVELS = [
     flight: {
       type: 'mixed', segmentLength: 150, ringSpacing: 70,
       sequence: [
-        { type: 'floaters', density: 2.7, minSize: 1.4, maxSize: 2.8 },
+        { type: 'floaters', density: 3.6, chopperDensity: 2.7, minSize: 1.4, maxSize: 2.8 },
         { type: 'pillars', chance: 0.9, minHeight: 2 },
       ],
     },
@@ -279,7 +281,7 @@ export const LEVELS = [
   {
     name: 'Night',
     pattern: { type: 'scatter', density: 4.9, swing: 5 },
-    flight: { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
+    flight: { type: 'floaters', density: 4.9, chopperDensity: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     heli: { type: 'cave', opening: 7.6, wander: 0.8, roughness: 0.4, blockSpacing: 13, blockMin: 3, blockMax: 4.5 },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
@@ -310,7 +312,7 @@ export const LEVELS = [
     flight: {
       type: 'mixed', segmentLength: 160, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 2.9, minSize: 1.4, maxSize: 2.6 },
+        { type: 'floaters', density: 3.9, chopperDensity: 2.9, minSize: 1.4, maxSize: 2.6 },
         { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 2 },
       ],
@@ -344,7 +346,7 @@ export const LEVELS = [
     flight: {
       type: 'mixed', segmentLength: 180, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.8 },
+        { type: 'floaters', density: 4.9, chopperDensity: 3.6, minSize: 1.2, maxSize: 2.8 },
         { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4 },
         { type: 'frames', spacing: 18, holeWidth: 3.1, holeHeight: 2.65, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 3 },

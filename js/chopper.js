@@ -37,6 +37,9 @@ export function chopperConfig(config) {
     levelLength: config.chopperLevelDistance * config.scorePerUnit,
     maxSteerSpeed: config.chopperMaxSideSpeed,
     maxClimbSpeed: Math.min(config.chopperMaxClimb, config.chopperMaxSink),
+    // 3D Heli keeps its own (lower) ceiling and the floater counts made for it.
+    flightMaxAltitude: config.chopperMaxAltitude,
+    useChopperDensity: true,
   };
 }
 
@@ -196,7 +199,7 @@ export function stepChopper(c, dt, lever, stickX, stickY) {
   const target = targetClimb(c.lever, cfg);
   c.vy += (target - c.vy) * (1 - Math.exp(-cfg.chopperClimbEase * dt));
   c.y += c.vy * dt;
-  if (c.y > cfg.flightMaxAltitude) { c.y = cfg.flightMaxAltitude; c.vy = Math.min(0, c.vy); }
+  if (c.y > cfg.chopperMaxAltitude) { c.y = cfg.chopperMaxAltitude; c.vy = Math.min(0, c.vy); }
   const gy = groundY(cfg);
   if (c.y <= gy) {
     if (!c.onGround) {

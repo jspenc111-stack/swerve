@@ -223,7 +223,7 @@ function updateHud() {
     $('alt-marker').style.top = `${((1 - t) * 100).toFixed(1)}%`;
   } else if (gameMode === 'chopper') {
     // Height from the ground (0) to the ceiling.
-    const t = Math.max(0, chopper.y - CONFIG.flightMinAltitude) / (CONFIG.flightMaxAltitude - CONFIG.flightMinAltitude);
+    const t = Math.max(0, chopper.y - CONFIG.flightMinAltitude) / (CONFIG.chopperMaxAltitude - CONFIG.flightMinAltitude);
     $('alt-marker').style.top = `${((1 - t) * 100).toFixed(1)}%`;
     const m = Math.round(chopper.multiplier * 10) / 10;
     if (m !== lastMultShown) {

@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFlight, resetFlight, stepFlight, approach } from '../js/flight.js';
+import { createChopper, stepChopper } from '../js/chopper.js';
 import { getFlightSteer, createChopperControls, thumbDown, thumbMove, updateChopperControls } from '../js/input.js';
 import { flightHitbox, hitsBox } from '../js/collision.js';
 import { CONFIG, LEVELS } from '../js/config.js';
@@ -11,6 +12,7 @@ const fresh = () => {
   f.invincible = true;
   return f;
 };
+const clearAhead = (f) => { f.spawner.boxes.length = 0; f.spawner.targets.length = 0; };
 const run = (f, seconds, sx, sy, boost = false) => {
   let events = [];
   for (let i = 0; i < seconds * 60; i++) events = events.concat(stepFlight(f, 1 / 60, sx, sy, boost).slice());
@@ -30,9 +32,10 @@ test('the jet starts at the start altitude and climbs/dives smoothly', () => {
 
 test('altitude stays between the ground and the ceiling, without crashing', () => {
   const f = createFlight(CONFIG, LEVELS, 4); // not invincible
-  run(f, 3, 0, 1);
+  // The climb to the ceiling is long enough to reach real obstacles, so clear them.
+  for (let i = 0; i < 3 * 60; i++) { clearAhead(f); stepFlight(f, 1 / 60, 0, 1); }
   assert.equal(f.y, CONFIG.flightMaxAltitude);
-  run(f, 4, 0, -1);
+  for (let i = 0; i < 4 * 60; i++) { clearAhead(f); stepFlight(f, 1 / 60, 0, -1); }
   assert.equal(f.y, CONFIG.flightMinAltitude);
   assert.equal(f.crashed, false);
 });
@@ -194,7 +197,6 @@ const drone = (f, dz, big = false, dx = 0) => {
   f.spawner.targets.push(t);
   return t;
 };
-const clearAhead = (f) => { f.spawner.boxes.length = 0; f.spawner.targets.length = 0; };
 
 test('auto-fire shoots fireRate shots a second, only when firing is on', () => {
   const f = fresh();
@@ -277,4 +279,41 @@ test('drones sway side to side but stay within their sway', () => {
   }
   assert.ok(max - min > 2, 'it moves');
   assert.ok(min >= t.x0 - 1.5 - 1e-9 && max <= t.x0 + 1.5 + 1e-9, 'within its sway');
+});
+
+test('the 3D Flight ceiling is 12 and the jet starts at 4; the 3D Heli ceiling and course stay at 9', () => {
+  assert.equal(CONFIG.flightMaxAltitude, 12);
+  assert.equal(CONFIG.flightStartAltitude, 4);
+  assert.equal(CONFIG.chopperMaxAltitude, 9);
+  const f = fresh();
+  assert.equal(f.y, 4);
+  assert.equal(f.spawner.config.flightMaxAltitude, 12, '3D Flight course is built for the new ceiling');
+  const c = createChopper(CONFIG, LEVELS, 2);
+  assert.equal(c.course.flightMaxAltitude, 9, '3D Heli course is still built for 9');
+  assert.equal(c.spawner.config.flightMaxAltitude, 9);
+  // Fly the helicopter straight up: it stops at 9.
+  for (let i = 0; i < 6 * 60; i++) {
+    c.spawner.boxes.length = 0;
+    stepChopper(c, 1 / 60, 1, 0, 0);
+  }
+  assert.equal(c.y, 9);
+});
+
+test('the taller 3D Flight sky has obstacles high up, and the 3D Heli sky stays below 9', () => {
+  const f = fresh();
+  let high = 0;
+  for (let i = 0; i < 60 * 20; i++) {
+    stepFlight(f, 1 / 60, 0, 0);
+    for (const b of f.spawner.boxes) if (b.y > 9) high++; // a block's bottom above the old ceiling
+    f.spawner.boxes.length = 0;
+  }
+  assert.ok(high > 10, `blocks reach above the old ceiling (${high})`);
+  const c = createChopper(CONFIG, LEVELS, 2);
+  c.invincible = true;
+  for (let i = 0; i < 60 * 20; i++) {
+    stepChopper(c, 1 / 60, 0.8, 0, 1);
+    for (const b of c.spawner.boxes) {
+      if (b.y > CONFIG.chopperMaxAltitude + 1) assert.fail(`a 3D Heli block floats at ${b.y.toFixed(1)}, above its sky`);
+    }
+  }
 });
