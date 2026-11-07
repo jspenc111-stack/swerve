@@ -32,9 +32,14 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - **Each mode has its own speed and control settings. Changing one mode's feel must not change another's.**
     - Classic: `classicSpeedFactor`, `steerAccel`/`maxSteerSpeed`/`steerFriction`, tilt and drag.
     - 3D Flight: `flightSteerAccel`/`flightMaxSteerSpeed`/`flightSteerFriction`, `climbAccel`/`flightMaxClimbSpeed`/`climbFriction`, `flightReverseBoost`, `flightJoystickRadiusPx` and `flightMaxAltitude`.
-      - `flightReverseBoost` is the extra pull when reversing **or** braking.
-      - The 3D Flight joystick's centre follows the thumb, separately on each axis, so it's never more than `flightJoystickRadiusPx` away. Keep it per axis, so full sideways and full up/down still work together on a diagonal.
-      - If the owner says direction changes feel slow, these are the settings to adjust.
+      - **The steering feel comes from `flightFeelPresets`** (`fine`, `medium` and `quick`), which the owner chooses in Settings (default `fine`). Each preset sets:
+        - `ringPx`: the joystick size, which replaces `flightJoystickRadiusPx`;
+        - `curve`: the softer middle on the stick;
+        - `accelScale`: multiplies `flightSteerAccel` and `climbAccel`;
+        - `boost`: the extra pull when reversing **or** braking, which replaces `flightReverseBoost`.
+      - The joystick's centre follows the thumb, separately on each axis, so it's never more than `ringPx` away. Keep it per axis, so full sideways and full up/down still work together on a diagonal.
+      - The jet's bank and nose angles are eased (`flightAttitudeEase`, look only).
+      - **Tuning feel:** "too slow to turn" → raise `boost` or `accelScale`, or lower `ringPx`. "Too twitchy or bouncy, or not precise enough" → raise `curve` or `ringPx`, or lower `boost`. Change the preset the owner uses (Fine unless they say otherwise), and keep Quick equal to the v1.5.3 feel.
     - 3D Heli: the `chopper…` values, `joystickRadiusPx` and `chopperMaxAltitude`.
     - `baseSpeed` and `speedPerLevel` are shared by every mode except Helicopter.
   - 3D Flight's course is laid out with `maxSteerSpeed`/`maxClimbSpeed` (the course values), not the jet's own maximums. Making the jet more agile doesn't change the courses.
