@@ -8,7 +8,8 @@
 //   tilt  — tilt the phone; "straight" is whatever angle you held at the start
 //   drag  — steer toward where your finger is, relative to where it first touched
 // In 3D Flight mode, touch works as a joystick (drag in any direction from
-// where you touched), and tilt uses both left/right and forward/back tilt.
+// where you touched; the centre follows your thumb if you push past the
+// ring), and tilt uses both left/right and forward/back tilt.
 // In Helicopter mode, holding ANY touch (or the mouse, Space, ↑ or W) lifts;
 // the pause button and P/Esc pause.
 // In 3D Heli mode, two thumbs: touches starting in the collective zone (left
@@ -223,6 +224,15 @@ export function getFlightSteer(input, out, invertY = false) {
   const p = input.pointers[input.pointers.length - 1];
   if (!p) return out;
   const R = cfg.flightJoystickRadiusPx; // 3D Flight's own (smaller) joystick
+  // The centre follows the thumb: on each axis separately, if the thumb has
+  // gone more than R past the centre, slide the centre along so it's exactly
+  // R behind. Turning back then responds at once (full the other way is never
+  // more than two ring-widths of travel). Per axis, not a circle, so a
+  // diagonal still gives full sideways AND full up/down together.
+  if (p.x - p.startX > R) p.startX = p.x - R;
+  else if (p.startX - p.x > R) p.startX = p.x + R;
+  if (p.y - p.startY > R) p.startY = p.y - R;
+  else if (p.startY - p.y > R) p.startY = p.y + R;
   out.x = Math.max(-1, Math.min(1, (p.x - p.startX) / R));
   out.y = Math.max(-1, Math.min(1, -(p.y - p.startY) / R)) * (invertY ? -1 : 1);
   out.joystick = p;
