@@ -43,7 +43,7 @@ export function resetGame(game, seed = game.seed + 1, startLevel = 0) {
   game.events.length = 0;
   levelForDistance(start, cfg, game.levels, game.info);
   game.levelIndex = game.info.absIndex; // absolute level index (counts across laps)
-  game.baseSpeed = levelBaseSpeed(game.info, cfg);
+  game.baseSpeed = classicBaseSpeed(game.info, cfg);
   game.speed = game.baseSpeed;
   resetSpawner(game.spawner, seed, start, 0);
   // Start with a full field: only the level-start breather stays empty.
@@ -90,7 +90,7 @@ export function stepGame(game, dt, steer, boosting = false) {
   // Forward movement, speeding up gently within the level.
   game.time += dt;
   game.levelTime += dt;
-  game.baseSpeed = levelBaseSpeed(game.info, cfg) + cfg.speedRampPerSecond * game.levelTime;
+  game.baseSpeed = classicBaseSpeed(game.info, cfg) + cfg.speedRampPerSecond * game.levelTime;
   game.speed = game.baseSpeed * (1 + (cfg.boostMultiplier - 1) * game.boost);
   game.distance += game.speed * dt;
 
@@ -104,7 +104,7 @@ export function stepGame(game, dt, steer, boosting = false) {
     game.levelIndex = absIndex;
     levelForDistance(game.distance, cfg, game.levels, game.info);
     game.levelTime = 0;
-    game.baseSpeed = levelBaseSpeed(game.info, cfg);
+    game.baseSpeed = classicBaseSpeed(game.info, cfg);
     game.speed = game.baseSpeed * (1 + (cfg.boostMultiplier - 1) * game.boost);
     events.push(LEVEL_EVENT);
   }
@@ -134,13 +134,19 @@ export function jumpToLevel(game, absIndex) {
   game.levelTime = 0;
   game.vx = 0;
   levelForDistance(start, cfg, game.levels, game.info);
-  game.baseSpeed = levelBaseSpeed(game.info, cfg);
+  game.baseSpeed = classicBaseSpeed(game.info, cfg);
   game.speed = game.baseSpeed;
   resetSpawner(game.spawner, game.seed + absIndex * 7919, start, game.x);
   prefillSpawner(game.spawner, start, game.x, game.baseSpeed * cfg.boostMultiplier);
   game.events.length = 0;
   game.events.push(LEVEL_EVENT);
   return game.events;
+}
+
+// Classic's own speed for a level: the shared level speed × classicSpeedFactor.
+// (3D Flight and 3D Heli use levelBaseSpeed directly, so they don't change.)
+export function classicBaseSpeed(info, cfg) {
+  return levelBaseSpeed(info, cfg) * (cfg.classicSpeedFactor ?? 1);
 }
 
 const LEVEL_EVENT = Object.freeze({ type: 'level' });

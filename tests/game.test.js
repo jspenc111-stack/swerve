@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, stepGame, capFrameTime, resetGame } from '../js/game.js';
+import { createGame, stepGame, capFrameTime, resetGame, classicBaseSpeed } from '../js/game.js';
+import { createFlight } from '../js/flight.js';
+import { chopperTopSpeed } from '../js/chopper.js';
 import { levelBaseSpeed } from '../js/levels.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 
@@ -10,11 +12,13 @@ const fresh = () => {
   return g;
 };
 
-test('speed starts at baseSpeed and ramps up gently within a level', () => {
+const K = CONFIG.classicSpeedFactor;
+
+test('speed starts at baseSpeed × classicSpeedFactor and ramps up gently within a level', () => {
   const g = fresh();
-  assert.equal(g.speed, CONFIG.baseSpeed);
+  assert.ok(Math.abs(g.speed - CONFIG.baseSpeed * K) < 1e-9);
   for (let i = 0; i < 60; i++) stepGame(g, 1 / 60, 0); // 1 second
-  const expected = CONFIG.baseSpeed + CONFIG.speedRampPerSecond * 1;
+  const expected = CONFIG.baseSpeed * K + CONFIG.speedRampPerSecond * 1;
   assert.ok(Math.abs(g.speed - expected) < 1e-6, `speed ${g.speed} vs ${expected}`);
 });
 
@@ -26,7 +30,7 @@ test('speed jumps by speedPerLevel at a new level', () => {
   }
   assert.equal(levelUps, 1);
   assert.equal(g.levelTime < 0.05, true);
-  const expected = CONFIG.baseSpeed + CONFIG.speedPerLevel + (LEVELS[1].speedBonus || 0);
+  const expected = (CONFIG.baseSpeed + CONFIG.speedPerLevel + (LEVELS[1].speedBonus || 0)) * K;
   assert.ok(Math.abs(g.speed - expected) < 0.01);
 });
 
@@ -37,7 +41,7 @@ test('the frame time is capped', () => {
   assert.equal(capFrameTime(NaN, CONFIG), 0);
   const g = fresh();
   stepGame(g, 10, 0); // a 10 second hiccup
-  assert.ok(g.distance <= CONFIG.baseSpeed * CONFIG.maxFrameTime * 1.01);
+  assert.ok(g.distance <= CONFIG.baseSpeed * K * CONFIG.maxFrameTime * 1.01);
 });
 
 test('the score only increases, and grows with distance', () => {
@@ -84,7 +88,7 @@ test('a run can start at any level, and the score starts from 0 there', () => {
   assert.equal(g.info.level.name, LEVELS[3].name);
   assert.equal(g.score, 0);
   assert.equal(g.startLevel, 3);
-  assert.ok(Math.abs(g.speed - levelBaseSpeed(g.info, CONFIG)) < 1e-9);
+  assert.ok(Math.abs(g.speed - levelBaseSpeed(g.info, CONFIG) * K) < 1e-9);
   for (let i = 0; i < 60; i++) stepGame(g, 1 / 60, 0);
   assert.ok(g.score > 0 && g.score < 20, `score ${g.score} counts only this run`);
   assert.equal(g.levelIndex, 3);
@@ -152,4 +156,23 @@ test('during play, nothing new ever appears closer than the fog distance', () =>
       }
     }
   }
+});
+
+test('Classic runs 2% faster; 3D Flight and 3D Heli speeds are unchanged', () => {
+  assert.equal(CONFIG.classicSpeedFactor, 1.02);
+  for (let level = 0; level < LEVELS.length; level++) {
+    const g = createGame(CONFIG, LEVELS, 3);
+    resetGame(g, 3, level);
+    const shared = levelBaseSpeed(g.info, CONFIG);
+    assert.ok(Math.abs(g.speed - shared * 1.02) < 1e-9, `Classic level ${level + 1}`);
+    assert.ok(Math.abs(classicBaseSpeed(g.info, CONFIG) - shared * 1.02) < 1e-9);
+    // 3D Heli's top speed still comes from the shared level speed.
+    assert.ok(Math.abs(chopperTopSpeed(g.info, CONFIG) - shared * CONFIG.chopperTopSpeedFactor) < 1e-9,
+      `3D Heli level ${level + 1}`);
+  }
+  // 3D Flight starts at the shared speed × flightSpeedFactor.
+  const f = createFlight(CONFIG, LEVELS, 7);
+  assert.ok(Math.abs(f.speed - CONFIG.baseSpeed * CONFIG.flightSpeedFactor) < 1e-9, `3D Flight speed ${f.speed}`);
+  assert.equal(CONFIG.baseSpeed, 24, 'the shared baseSpeed is unchanged');
+  assert.equal(CONFIG.speedPerLevel, 2.75, 'the shared speedPerLevel is unchanged');
 });
