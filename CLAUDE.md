@@ -32,6 +32,9 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - **Each mode has its own speed and control settings. Changing one mode's feel must not change another's.**
     - Classic: `classicSpeedFactor`, `steerAccel`/`maxSteerSpeed`/`steerFriction`, tilt and drag.
     - 3D Flight: `flightSteerAccel`/`flightMaxSteerSpeed`/`flightSteerFriction`, `climbAccel`/`flightMaxClimbSpeed`/`climbFriction`, `flightReverseBoost`, `flightJoystickRadiusPx` and `flightMaxAltitude`.
+      - `flightReverseBoost` is the extra pull when reversing **or** braking.
+      - The 3D Flight joystick's centre follows the thumb, separately on each axis, so it's never more than `flightJoystickRadiusPx` away. Keep it per axis, so full sideways and full up/down still work together on a diagonal.
+      - If the owner says direction changes feel slow, these are the settings to adjust.
     - 3D Heli: the `chopper…` values, `joystickRadiusPx` and `chopperMaxAltitude`.
     - `baseSpeed` and `speedPerLevel` are shared by every mode except Helicopter.
   - 3D Flight's course is laid out with `maxSteerSpeed`/`maxClimbSpeed` (the course values), not the jet's own maximums. Making the jet more agile doesn't change the courses.
