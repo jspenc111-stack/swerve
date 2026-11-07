@@ -1,7 +1,7 @@
 // 3D Flight mode: movement, limits, rings, crashes and score.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFlight, resetFlight, stepFlight, approach } from '../js/flight.js';
+import { createFlight, resetFlight, stepFlight, approach, flightFeelPreset } from '../js/flight.js';
 import { createChopper, stepChopper } from '../js/chopper.js';
 import { getFlightSteer, createChopperControls, thumbDown, thumbMove, updateChopperControls } from '../js/input.js';
 import { flightHitbox, hitsBox } from '../js/collision.js';
@@ -50,25 +50,29 @@ test('3D Flight steering uses its own quicker values', () => {
   run(c, 0.3, 0, 1); // short climb, well below the ceiling
   assert.ok(Math.abs(c.vy - CONFIG.flightMaxClimbSpeed) < 1e-9, 'top up/down speed is flightMaxClimbSpeed');
 
-  // Time (in frames) to reach full speed from rest vs. from full speed the other way.
-  const framesTo = (f, sx, target) => {
-    let n = 0;
-    while (Math.abs(f.vx - target) > 1e-9 && n < 600) { stepFlight(f, 1 / 60, sx, 0); n++; }
-    return n;
-  };
-  const a = fresh();
-  const fromRest = framesTo(a, 1, CONFIG.flightMaxSteerSpeed);
-  const b = fresh();
-  run(b, 1, -1, 0); // full speed left
-  const turnAround = framesTo(b, 1, CONFIG.flightMaxSteerSpeed);
-  // Without the boost, a turn-around is exactly two "from rest" runs.
-  const c2 = createFlight({ ...CONFIG, flightReverseBoost: 1 }, LEVELS, 3);
-  c2.invincible = true;
-  run(c2, 1, -1, 0);
-  const plain = framesTo(c2, 1, CONFIG.flightMaxSteerSpeed);
-  assert.ok(turnAround < plain && turnAround < 2 * fromRest,
-    `the reverse boost makes turning around quicker (${turnAround} frames vs ${plain} without it, ${fromRest} from rest)`);
-  assert.ok(turnAround * (1000 / 60) < 250, `turn-around in ${(turnAround * 1000 / 60).toFixed(0)} ms`);
+  // Time (in frames) to reach full speed from rest vs. from full speed the
+  // other way, for every Steering feel preset.
+  for (const name of ['fine', 'medium', 'quick']) {
+    const feel = flightFeelPreset(CONFIG, name);
+    const framesTo = (f, sx, target, fl = feel) => {
+      let n = 0;
+      while (Math.abs(f.vx - target) > 1e-9 && n < 600) { stepFlight(f, 1 / 60, sx, 0, false, false, fl); n++; }
+      return n;
+    };
+    const a = fresh();
+    const fromRest = framesTo(a, 1, CONFIG.flightMaxSteerSpeed);
+    const b = fresh();
+    framesTo(b, -1, -CONFIG.flightMaxSteerSpeed); // full speed left
+    const turnAround = framesTo(b, 1, CONFIG.flightMaxSteerSpeed);
+    // Without the boost, a turn-around is exactly two "from rest" runs.
+    const noBoost = { ...feel, boost: 1 };
+    const c2 = fresh();
+    framesTo(c2, -1, -CONFIG.flightMaxSteerSpeed, noBoost);
+    const plain = framesTo(c2, 1, CONFIG.flightMaxSteerSpeed, noBoost);
+    assert.ok(turnAround < plain && turnAround < 2 * fromRest,
+      `${name}: the reverse boost makes turning around quicker (${turnAround} frames vs ${plain} without it, ${fromRest} from rest)`);
+    assert.ok(turnAround * (1000 / 60) < 300, `${name}: full turn-around in ${(turnAround * 1000 / 60).toFixed(0)} ms`);
+  }
 });
 
 test('approach(): the reverse boost only applies when steering against your movement', () => {

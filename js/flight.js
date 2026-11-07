@@ -54,6 +54,8 @@ export function resetFlight(f, seed = f.seed + 1, startLevel = 0) {
   f.vx = 0;
   f.y = cfg.flightStartAltitude;
   f.vy = 0;
+  f.bankLook = 0;    // eased bank angle for drawing, degrees (look only)
+  f.pitchLook = 0;   // eased nose angle for drawing, degrees (look only)
   f.time = 0;
   f.levelTime = 0;
   f.boost = 0;
@@ -69,6 +71,25 @@ export function resetFlight(f, seed = f.seed + 1, startLevel = 0) {
 
 function flightBaseSpeed(f) {
   return levelBaseSpeed(f.info, f.config) * f.config.flightSpeedFactor;
+}
+
+// A softer middle for the stick: x in -1 … 1, e in 0 … 1 (0 = straight line).
+// Full deflection still gives full output (stickCurve(±1) = ±1), but small and
+// medium moves are gentler, for finer control.
+export function stickCurve(x, e = 0) {
+  const a = Math.abs(x);
+  return Math.sign(x) * ((1 - e) * a + e * a * a * a);
+}
+
+// Used if a config has no presets (keeps the plain v1.5.3-style behaviour).
+const PLAIN_FEEL = Object.freeze({ ringPx: 55, curve: 0, accelScale: 1, boost: 1 });
+
+// The 3D Flight "Steering feel" preset called `name` ('fine', 'medium' or
+// 'quick'); unknown names give the default preset.
+export function flightFeelPreset(cfg, name) {
+  const presets = cfg.flightFeelPresets;
+  if (!presets) return PLAIN_FEEL;
+  return (Object.hasOwn(presets, name) && presets[name]) || presets[cfg.flightFeelDefault] || PLAIN_FEEL;
 }
 
 // Move a velocity toward target at `accel`, or let it drift to a stop.
@@ -90,10 +111,11 @@ export function approach(v, input, max, accel, friction, dt, reverseBoost = 1) {
 }
 
 // Advance by dt seconds. steerX: -1 left … 1 right. steerY: -1 down … 1 up.
-// firing: auto-fire on (true) or off.
+// firing: auto-fire on (true) or off. feel: a Steering feel preset (see
+// flightFeelPreset; default: the default preset) for acceleration and boost.
 // Returns this frame's events: { type: 'level' | 'crash' | 'ring' | 'shot' |
 // 'hit' | 'destroy' } ('destroy' also has `points` and `big`).
-export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = false) {
+export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = false, feel = null) {
   const cfg = f.config;
   const events = f.events;
   events.length = 0;
@@ -103,15 +125,24 @@ export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = fal
 
   steerX = Math.max(-1, Math.min(1, steerX || 0));
   steerY = Math.max(-1, Math.min(1, steerY || 0));
-  // 3D Flight's own, snappier control values (see config.js).
-  const rb = cfg.flightReverseBoost ?? 1;
-  f.vx = approach(f.vx, steerX, cfg.flightMaxSteerSpeed, cfg.flightSteerAccel, cfg.flightSteerFriction, dt, rb);
-  f.vy = approach(f.vy, steerY, cfg.flightMaxClimbSpeed, cfg.climbAccel, cfg.climbFriction, dt, rb);
+  // 3D Flight's own control values (see config.js), scaled by the Steering feel.
+  const feelP = feel || flightFeelPreset(cfg, cfg.flightFeelDefault);
+  const rb = feelP.boost ?? 1;
+  const as = feelP.accelScale ?? 1;
+  f.vx = approach(f.vx, steerX, cfg.flightMaxSteerSpeed, cfg.flightSteerAccel * as, cfg.flightSteerFriction, dt, rb);
+  f.vy = approach(f.vy, steerY, cfg.flightMaxClimbSpeed, cfg.climbAccel * as, cfg.climbFriction, dt, rb);
   f.x += f.vx * dt;
   f.y += f.vy * dt;
   // The ground and the ceiling are soft limits: you stop, you don't crash.
   if (f.y < cfg.flightMinAltitude) { f.y = cfg.flightMinAltitude; f.vy = Math.max(0, f.vy); }
   if (f.y > cfg.flightMaxAltitude) { f.y = cfg.flightMaxAltitude; f.vy = Math.min(0, f.vy); }
+
+  // The jet's bank and nose angles (degrees) ease toward their targets, so
+  // quick speed changes don't make it rock. Look only: physics, the hitbox
+  // and the camera don't use these.
+  const look = 1 - Math.exp(-(cfg.flightAttitudeEase ?? 1e9) * dt);
+  f.bankLook += ((f.vx / cfg.flightMaxSteerSpeed) * cfg.flightRollDeg - f.bankLook) * look;
+  f.pitchLook += ((f.vy / cfg.flightMaxClimbSpeed) * cfg.flightPitchDeg - f.pitchLook) * look;
 
   const boostTarget = boosting ? 1 : 0;
   f.boost += (boostTarget - f.boost) * (1 - Math.exp(-cfg.boostEase * dt));

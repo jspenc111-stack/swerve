@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.5.3';
+export const APP_VERSION = '1.5.4';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -99,6 +99,23 @@ export const CONFIG = {
   flightMaxClimbSpeed: 10,    // top up/down speed
   flightReverseBoost: 2.2,    // extra pull when steering against your movement (reversing) or easing off the same way (braking)
   flightJoystickRadiusPx: 55, // drag this far from where you touched = full steering in 3D Flight
+  flightAttitudeEase: 10,     // how quickly the jet's bank and nose angles follow its movement (look only; higher = snappier)
+
+  // The "Steering feel" choice in Settings (3D Flight only). Each preset sets:
+  //   ringPx     — drag this far from where you touched = full steering
+  //                (the joystick's centre follows your thumb at this distance)
+  //   curve      — softer middle on the stick and tilt: 0 = straight line,
+  //                higher = gentler small moves (full stick is still full speed)
+  //   accelScale — multiplies flightSteerAccel and climbAccel
+  //   boost      — extra pull when steering against your movement (reversing)
+  //                or easing off the same way (braking)
+  // Top speeds, friction, the ceiling and the course layout are the same in all three.
+  flightFeelPresets: {
+    fine:   { ringPx: 65, curve: 0.6, accelScale: 0.83, boost: 1.6 },
+    medium: { ringPx: 60, curve: 0.4, accelScale: 0.9,  boost: 1.8 },
+    quick:  { ringPx: 55, curve: 0,   accelScale: 1.0,  boost: 2.2 }, // = v1.5.3
+  },
+  flightFeelDefault: 'fine',
 
   // ---- 3D Flight shooting ---------------------------------------------------
   fireRate: 6,                // shots per second (auto-fire)
