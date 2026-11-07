@@ -72,13 +72,17 @@ function flightBaseSpeed(f) {
 }
 
 // Move a velocity toward target at `accel`, or let it drift to a stop.
-// reverseBoost (optional): when you steer against your current movement, the
-// pull is this many times stronger, so turning around is quick.
+// reverseBoost (optional): when you steer against your current movement
+// (reversing), or ease off while still moving the same way (braking), the
+// pull is this many times stronger, so slowing down and turning around are
+// quick. Speeding up uses the normal pull.
 export function approach(v, input, max, accel, friction, dt, reverseBoost = 1) {
   if (input !== 0) {
-    const diff = input * max - v;
+    const target = input * max;
+    const diff = target - v;
     const reversing = v !== 0 && Math.sign(input) !== Math.sign(v);
-    const step = accel * (reversing ? reverseBoost : 1) * dt;
+    const braking = v !== 0 && !reversing && Math.abs(target) < Math.abs(v);
+    const step = accel * (reversing || braking ? reverseBoost : 1) * dt;
     return v + (Math.abs(diff) <= step ? diff : Math.sign(diff) * step);
   }
   v *= Math.exp(-friction * dt);

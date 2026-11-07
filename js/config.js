@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.5.2';
+export const APP_VERSION = '1.5.3';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -97,7 +97,7 @@ export const CONFIG = {
   flightMaxSteerSpeed: 13,    // top sideways speed
   flightSteerFriction: 10,    // how quickly sideways drifting stops when you let go
   flightMaxClimbSpeed: 10,    // top up/down speed
-  flightReverseBoost: 1.8,    // extra pull when steering against your movement (quick turn-arounds)
+  flightReverseBoost: 2.2,    // extra pull when steering against your movement (reversing) or easing off the same way (braking)
   flightJoystickRadiusPx: 55, // drag this far from where you touched = full steering in 3D Flight
 
   // ---- 3D Flight shooting ---------------------------------------------------
