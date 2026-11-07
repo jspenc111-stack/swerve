@@ -74,7 +74,7 @@ function checkPassable({ boxes, endZ, maxSpeed }) {
   const X0 = -B;
   const Y0 = CONFIG.flightMinAltitude;
   const nx = Math.floor((2 * B) / CELL) + 1;
-  const ny = Math.floor((CONFIG.flightMaxAltitude - Y0) / CELL) + 1;
+  const ny = Math.floor((COURSE.flightMaxAltitude - Y0) / CELL) + 1;
   let R = new Uint8Array(nx * ny).fill(1);
   let T = new Uint8Array(nx * ny);
   const F = new Uint8Array(nx * ny);
@@ -190,7 +190,7 @@ for (let li = 0; li < LEVELS.length; li++) {
         for (const ring of run.rings) {
           const c = chopperAt(ring.x, ring.y - OUTER.centreY, ring.z);
           assert.ok(!chopperHits(c, run.boxes), `seed ${seed}: ring at z=${ring.z.toFixed(1)} is blocked`);
-          assert.ok(ring.y >= CONFIG.flightMinAltitude && ring.y <= CONFIG.flightMaxAltitude, 'ring within reach');
+          assert.ok(ring.y >= CONFIG.flightMinAltitude && ring.y <= COURSE.flightMaxAltitude, 'ring within reach');
         }
       }
       assert.ok(boxesSeen > SEEDS * 20, 'the layout should actually place obstacles');

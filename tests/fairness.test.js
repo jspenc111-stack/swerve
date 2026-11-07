@@ -158,7 +158,7 @@ for (const [name, pattern] of Object.entries(PATTERNS)) {
 
 for (const band of BANDS) test(`fairness: the real level list, played start to finish with real speeds, band ${band}`, () => {
   const info = {};
-  const speedAt = (z) => levelBaseSpeed(levelForDistance(z, CONFIG, LEVELS, info), CONFIG);
+  const speedAt = (z) => levelBaseSpeed(levelForDistance(z, CONFIG, LEVELS, info), CONFIG) * CONFIG.classicSpeedFactor;
   for (let seed = 1; seed <= 6; seed++) {
     // Long enough to pass through every level and into lap 2.
     const sp = { cubes: [], endZ: 0 };

@@ -115,7 +115,10 @@ All screens are HTML overlays on top of the canvas. Use large tap targets (at le
 
 A second way to play, picked on the start screen. Same levels, names, colors, effects, boost and level picker as Classic, but you fly in three dimensions.
 
-- **Movement**: forward speed is `flightSpeedFactor` × Classic's speed (boost works the same). Sideways steering is as in Classic; up/down uses `climbAccel`, `maxClimbSpeed`, `climbFriction`. Height is limited to `flightMinAltitude`…`flightMaxAltitude`; touching the ground or ceiling just stops you (no crash).
+- **Movement**: forward speed is `flightSpeedFactor` × the shared level speed (`baseSpeed`, `speedPerLevel`; not Classic's `classicSpeedFactor`). Boost works the same.
+- **Controls feel (v1.5.2)**: 3D Flight has its own, snappier control values: sideways `flightSteerAccel` (90), `flightMaxSteerSpeed` (13), `flightSteerFriction` (10); up/down `climbAccel` (80), `flightMaxClimbSpeed` (10), `climbFriction` (10). When you steer **against** your current movement, the pull is `flightReverseBoost` (1.8) times stronger (`approach()` in `flight.js`), so the jet turns around quickly. Full steering on the touch joystick takes a `flightJoystickRadiusPx` (55 px) drag. The bank and pitch look scale to the new top speeds, so they still top out at `flightRollDeg` / `flightPitchDeg`.
+- **Course layout is unchanged**: `flightSpawner.js` still bends the open path using `maxSteerSpeed` (11) and `maxClimbSpeed` (8). The jet has spare agility on the same courses, so fairness only gets easier.
+- **Height**: limited to `flightMinAltitude`…`flightMaxAltitude` (12 since v1.5.2, was 9); the jet starts at `flightStartAltitude` (4). Touching the ground or ceiling just stops you (no crash). Floating-block densities were raised about 35% in v1.5.2 to keep the taller sky as busy; pillars and frames reach the ceiling automatically.
 - **Controls**: touch works as a **joystick**: put a thumb anywhere and drag in any direction (a ring shows where). With *Tilt phone* chosen in Settings: tilt sideways to turn, tilt the top toward/away from you to climb/dive. Keyboard: arrows/WASD, Shift boosts. Optional *Inverted* up/down.
 - **Camera**: behind and above the jet (`flightCameraBack`, `flightCameraAbove`); follows sideways exactly and up/down with a slight lag. The jet's shadow on the ground shows how high you are; a height meter sits on the right of the screen.
 - **The jet**: a low-poly fighter (rounded fuselage, swept wings with colored tips, canards, twin angled tail fins, tail planes, glass canopy), metallic silver tinted by the level's ship color with accent parts in that color. Flat-shaded faces lit from above. It rolls into turns (`flightRollDeg`), pitches when climbing/diving (`flightPitchDeg`), has an afterburner (orange, blue-white when boosting) and navigation lights (red left, green right, white strobe).
@@ -123,7 +126,7 @@ A second way to play, picked on the start screen. Same levels, names, colors, ef
 
   | Type | What it looks like |
   |---|---|
-  | `floaters` | Floating blocks of different sizes at every height. |
+  | `floaters` | Floating blocks of different sizes at every height. `chopperDensity` is the count used in 3D Heli (its sky is lower). |
   | `pillars` | Towers rising from the ground; fly between them or over the short ones. |
   | `frames` | Walls with a window to fly through. The window moves left/right and up/down from wall to wall. A small `spacing` joins the walls into a **tunnel**. |
   | `mixed` | Cycles through a sequence, like Classic. |
@@ -178,10 +181,10 @@ A fourth way to play (added in v1.5.0; full details in `specs/CHANGE-SPEC-v1.5.m
 
 - **Controls** (`input.js`, pure functions tested in Node): the left 40% of the screen is the **collective zone**, the right 60% the **cyclic zone** (swapped with *3D Heli collective: Right*). Each touch keeps the role of the zone it started in until it lifts.
   - **Collective (lift lever)**: a tall slider near the edge (about 60% of the screen height) with a handle and a **HOVER** mark. Dragging is relative: moving the thumb up by `collectiveTravelPx` moves the lever its full range (0 bottom … 1 top). It **stays where you leave it**. Crossing the hover mark gives an 8 ms buzz (if vibration is on).
-  - **Cyclic (stick)**: a floating joystick where the thumb lands (3D Flight's ring and `joystickRadiusPx`): push forward to speed up, pull back to brake, sideways to slide. It eases back to the middle when released. A faint ring shows where it goes when no thumb is on it.
+  - **Cyclic (stick)**: a floating joystick where the thumb lands (the same ring as 3D Flight's, sized by `joystickRadiusPx`, 70 px; 3D Flight's own is 55 px): push forward to speed up, pull back to brake, sideways to slide. It eases back to the middle when released. A faint ring shows where it goes when no thumb is on it.
   - **Keyboard**: W/S move the lever (it stays put), arrows work the cyclic, P or Esc pause. The tilt, drag and inverted settings don't apply.
 - **Physics** (`chopper.js`):
-  - **Lift**: above `chopperHover` the target vertical speed rises toward +`chopperMaxClimb`; below it, toward −`chopperMaxSink`, in proportion to the lever's distance from hover. The real vertical speed eases toward the target (`chopperClimbEase`), so it feels floaty and heavy. The ceiling (`flightMaxAltitude`) just stops the climb.
+  - **Lift**: above `chopperHover` the target vertical speed rises toward +`chopperMaxClimb`; below it, toward −`chopperMaxSink`, in proportion to the lever's distance from hover. The real vertical speed eases toward the target (`chopperClimbEase`), so it feels floaty and heavy. The ceiling (`chopperMaxAltitude`, 9) just stops the climb. 3D Heli has its own ceiling since v1.5.2: `chopperConfig()` builds its course for `chopperMaxAltitude` and uses each level's `chopperDensity` for floating blocks, so its courses are exactly as before while 3D Flight's sky is taller. The altimeter uses the same ceiling.
   - **Forward**: pushing forward adds `stickY × chopperForwardAccel`, pulling back brakes at `chopperBrake`, a centered stick lets speed fade slowly (`chopperForwardDrag`). Speed stays between 0 and the level's **top speed** = `chopperTopSpeedFactor` × Classic's level speed (with laps and `speedBonus`; no in-level ramp). No flying backwards.
   - **Sideways**: `chopperSideAccel` up to `chopperMaxSideSpeed`, with low friction (`chopperSideFriction`), so it slides a little.
   - **Ground**: the body's centre sits at `flightMinAltitude` on the ground. Touching down slower than `chopperCrashSink` is a landing (soft thump); on the ground you slow to a stop and can't fly forward. Faster is a crash ("Hard landing!").
@@ -233,8 +236,8 @@ The game fakes 3D on a flat canvas using **perspective projection**: things furt
 All numbers below are **starting values in `config.js`**, not fixed rules.
 
 ### Movement
-- The ship always moves forward. Forward speed starts at `baseSpeed` and rises:
-  - by `speedPerLevel` at each new level, and
+- The ship always moves forward. Forward speed starts at `baseSpeed` × `classicSpeedFactor` (1.02 since v1.5.2: Classic runs 2% faster than the shared speed; 3D Flight and 3D Heli don't use this factor) and rises:
+  - by `speedPerLevel` (× `classicSpeedFactor`) at each new level, and
   - gently within a level, by `speedRampPerSecond`.
 - Steering uses sideways **velocity with acceleration**, not instant jumps, so it feels smooth: `steerAccel`, `maxSteerSpeed` and `steerFriction` (slowdown when you let go).
 - **Boost**: while the Boost button (or ↑/W) is held, speed eases up to `boostMultiplier` × normal (1.5×), and eases back when released (`boostEase`). More speed means points come faster. Obstacles are always laid out for full-boost speed, so the open path stays reachable whether or not you boost.

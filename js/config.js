@@ -10,7 +10,7 @@
 
 // Bump this on every change. It names the offline cache and is shown on the
 // start screen, so you can tell when an update has arrived on the phone.
-export const APP_VERSION = '1.5.1';
+export const APP_VERSION = '1.5.2';
 
 export const CONFIG = {
   // ---- Speed -------------------------------------------------------------
@@ -21,6 +21,7 @@ export const CONFIG = {
   maxFrameTime: 0.05,       // seconds; a phone hiccup can't skip further than this
   boostMultiplier: 1.5,     // holding the boost button makes you this many times faster
   boostEase: 5,             // how quickly boost kicks in and fades (higher = snappier)
+  classicSpeedFactor: 1.02, // Classic runs at this multiple of the shared speed; 3D Flight and 3D Heli are not affected
 
   // ---- Steering ----------------------------------------------------------
   steerAccel: 55,           // how quickly sideways speed builds up
@@ -70,11 +71,11 @@ export const CONFIG = {
   flightShipHeight: 0.36,
   flightHitboxScale: 0.7,     // jet hitbox is smaller than the drawing (fair near-misses)
   flightMinAltitude: 0.6,     // lowest you can fly
-  flightMaxAltitude: 9,       // highest you can fly (the ceiling)
-  flightStartAltitude: 3,
-  climbAccel: 45,             // how quickly up/down speed builds
-  maxClimbSpeed: 8,           // top up/down speed
-  climbFriction: 7,           // how quickly up/down drifting stops when you let go
+  flightMaxAltitude: 12,      // highest you can fly (the ceiling)
+  flightStartAltitude: 4,
+  climbAccel: 80,             // how quickly up/down speed builds
+  maxClimbSpeed: 8,           // up/down speed the course is laid out for (the jet's own top speed is flightMaxClimbSpeed)
+  climbFriction: 10,          // how quickly up/down drifting stops when you let go
   flightCameraBack: 3.8,      // camera distance behind the jet
   flightCameraAbove: 1.5,     // camera height above the jet
   flightCameraFollow: 6,      // how tightly the camera follows climbs and dives
@@ -86,7 +87,18 @@ export const CONFIG = {
   minGapHeight: 2.0,          // smallest opening height ever allowed (like minGapWidth)
   ringBonus: 25,              // points for flying through a ring
   ringSize: 3.2,              // width/height of a ring's opening
-  joystickRadiusPx: 70,       // drag this far from where you touched = full steering
+  joystickRadiusPx: 70,       // drag this far from where you touched = full steering (3D Heli's cyclic)
+
+  // ---- 3D Flight controls ---------------------------------------------------
+  // 3D Flight has its own, snappier control values (Classic and 3D Heli keep
+  // theirs). The course is still laid out with maxSteerSpeed and
+  // maxClimbSpeed, so the jet has spare agility and fairness only gets easier.
+  flightSteerAccel: 90,       // how quickly sideways speed builds up
+  flightMaxSteerSpeed: 13,    // top sideways speed
+  flightSteerFriction: 10,    // how quickly sideways drifting stops when you let go
+  flightMaxClimbSpeed: 10,    // top up/down speed
+  flightReverseBoost: 1.8,    // extra pull when steering against your movement (quick turn-arounds)
+  flightJoystickRadiusPx: 55, // drag this far from where you touched = full steering in 3D Flight
 
   // ---- 3D Flight shooting ---------------------------------------------------
   fireRate: 6,                // shots per second (auto-fire)
@@ -160,6 +172,7 @@ export const CONFIG = {
   chopperScorePerUnit: 1,     // points per unit of distance at ×1
   chopperMaxMultiplier: 2,    // score multiplier at top speed (×1 at half speed or slower)
   chopperLevelDistance: 420,  // distance per level (about 25 s at top speed)
+  chopperMaxAltitude: 9,      // 3D Heli's ceiling (its own, so 3D Flight's taller sky doesn't change it)
 
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
@@ -192,7 +205,8 @@ export const CONFIG = {
 //   mixed    — segmentLength: distance per pattern; sequence: list of patterns to cycle
 // flight: the obstacles for 3D Flight mode (3D Heli flies the same courses,
 //   without drones). type is one of:
-//   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size
+//   floaters — floating blocks. density: blocks per row; minSize/maxSize: block size;
+//              chopperDensity: blocks per row in 3D Heli (its sky is lower, so fewer)
 //   pillars  — towers rising from the ground. chance: per row; minHeight: shortest tower
 //   frames   — walls with a window to fly through. spacing: distance between walls
 //              (a small spacing makes a tunnel); holeWidth/holeHeight: window size;
@@ -220,8 +234,8 @@ export const CONFIG = {
 export const LEVELS = [
   {
     name: 'Morning',
-    pattern: { type: 'scatter', density: 2.4, swing: 4 },
-    flight: { type: 'floaters', density: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 2.45, swing: 4 },
+    flight: { type: 'floaters', density: 2.4, chopperDensity: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     heli: { type: 'cave', opening: 9.5, wander: 0.5, roughness: 0.3, blockSpacing: 24, blockMin: 2.5, blockMax: 3.5 },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
@@ -230,11 +244,11 @@ export const LEVELS = [
   },
   {
     name: 'Sunset',
-    pattern: { type: 'scatter', density: 3.4, swing: 4 },
+    pattern: { type: 'scatter', density: 3.47, swing: 4 },
     flight: {
       type: 'mixed', segmentLength: 150, ringSpacing: 70,
       sequence: [
-        { type: 'floaters', density: 2.7, minSize: 1.4, maxSize: 2.8 },
+        { type: 'floaters', density: 3.6, chopperDensity: 2.7, minSize: 1.4, maxSize: 2.8 },
         { type: 'pillars', chance: 0.9, minHeight: 2 },
       ],
     },
@@ -246,7 +260,7 @@ export const LEVELS = [
   },
   {
     name: 'Lagoon',
-    pattern: { type: 'clusters', chance: 0.8, min: 3, max: 6, swing: 5 },
+    pattern: { type: 'clusters', chance: 0.82, min: 3, max: 6, swing: 5 },
     flight: { type: 'pillars', chance: 1, minHeight: 2, ringSpacing: 60 },
     heli: { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.35, spikeMin: 2, spikeMax: 4 },
     palette: {
@@ -256,7 +270,7 @@ export const LEVELS = [
   },
   {
     name: 'Gates',
-    pattern: { type: 'gates', rowSpacing: 15, gapWidth: 2.9, wingCubes: 5, between: 1.5 },
+    pattern: { type: 'gates', rowSpacing: 15, gapWidth: 2.9, wingCubes: 5, between: 1.53 },
     flight: { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2, ringSpacing: 66 },
     heli: { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
     palette: {
@@ -266,8 +280,8 @@ export const LEVELS = [
   },
   {
     name: 'Night',
-    pattern: { type: 'scatter', density: 4.8, swing: 5 },
-    flight: { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
+    pattern: { type: 'scatter', density: 4.9, swing: 5 },
+    flight: { type: 'floaters', density: 4.9, chopperDensity: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     heli: { type: 'cave', opening: 7.6, wander: 0.8, roughness: 0.4, blockSpacing: 13, blockMin: 3, blockMax: 4.5 },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
@@ -277,7 +291,7 @@ export const LEVELS = [
   },
   {
     name: 'Canyon',
-    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.5 },
+    pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.53 },
     flight: { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4, ringSpacing: 48 },
     heli: { type: 'snake', opening: 5.4, wander: 1, roughness: 0.5 },
     palette: {
@@ -290,15 +304,15 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 160,
       sequence: [
-        { type: 'scatter', density: 3.4, swing: 5 },
-        { type: 'gates', rowSpacing: 14.5, gapWidth: 2.9, wingCubes: 5, between: 0.8 },
-        { type: 'clusters', chance: 0.8, min: 3, max: 6, swing: 5 },
+        { type: 'scatter', density: 3.47, swing: 5 },
+        { type: 'gates', rowSpacing: 14.5, gapWidth: 2.9, wingCubes: 5, between: 0.82 },
+        { type: 'clusters', chance: 0.82, min: 3, max: 6, swing: 5 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 160, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 2.9, minSize: 1.4, maxSize: 2.6 },
+        { type: 'floaters', density: 3.9, chopperDensity: 2.9, minSize: 1.4, maxSize: 2.6 },
         { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 2 },
       ],
@@ -323,16 +337,16 @@ export const LEVELS = [
     pattern: {
       type: 'mixed', segmentLength: 180,
       sequence: [
-        { type: 'scatter', density: 4.4, swing: 6 },
-        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.5 },
-        { type: 'gates', rowSpacing: 13.5, gapWidth: 2.7, wingCubes: 6, between: 1.2 },
-        { type: 'clusters', chance: 0.9, min: 3, max: 6, swing: 6 },
+        { type: 'scatter', density: 4.49, swing: 6 },
+        { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.53 },
+        { type: 'gates', rowSpacing: 13.5, gapWidth: 2.7, wingCubes: 6, between: 1.22 },
+        { type: 'clusters', chance: 0.92, min: 3, max: 6, swing: 6 },
       ],
     },
     flight: {
       type: 'mixed', segmentLength: 180, ringSpacing: 60,
       sequence: [
-        { type: 'floaters', density: 3.6, minSize: 1.2, maxSize: 2.8 },
+        { type: 'floaters', density: 4.9, chopperDensity: 3.6, minSize: 1.2, maxSize: 2.8 },
         { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4 },
         { type: 'frames', spacing: 18, holeWidth: 3.1, holeHeight: 2.65, extent: 7, depth: 1.2 },
         { type: 'pillars', chance: 1, minHeight: 3 },

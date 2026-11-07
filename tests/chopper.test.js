@@ -67,13 +67,13 @@ test('climbing eases in rather than jumping', () => {
   const mid = c.vy;
   assert.ok(mid > 0.2 * CONFIG.chopperMaxClimb && mid < 0.9 * CONFIG.chopperMaxClimb);
   run(c, 1.5, 1);
-  assert.ok(c.vy > 0.95 * CONFIG.chopperMaxClimb || c.y === CONFIG.flightMaxAltitude);
+  assert.ok(c.vy > 0.95 * CONFIG.chopperMaxClimb || c.y === CONFIG.chopperMaxAltitude);
 });
 
 test('the ceiling just stops the climb', () => {
   const c = airborne(8);
   run(c, 3, 1);
-  assert.equal(c.y, CONFIG.flightMaxAltitude);
+  assert.equal(c.y, CONFIG.chopperMaxAltitude);
   assert.ok(!c.crashed);
   assert.ok(c.vy <= 0);
 });

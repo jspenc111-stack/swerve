@@ -72,10 +72,13 @@ function flightBaseSpeed(f) {
 }
 
 // Move a velocity toward target at `accel`, or let it drift to a stop.
-function approach(v, input, max, accel, friction, dt) {
+// reverseBoost (optional): when you steer against your current movement, the
+// pull is this many times stronger, so turning around is quick.
+export function approach(v, input, max, accel, friction, dt, reverseBoost = 1) {
   if (input !== 0) {
     const diff = input * max - v;
-    const step = accel * dt;
+    const reversing = v !== 0 && Math.sign(input) !== Math.sign(v);
+    const step = accel * (reversing ? reverseBoost : 1) * dt;
     return v + (Math.abs(diff) <= step ? diff : Math.sign(diff) * step);
   }
   v *= Math.exp(-friction * dt);
@@ -96,8 +99,10 @@ export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = fal
 
   steerX = Math.max(-1, Math.min(1, steerX || 0));
   steerY = Math.max(-1, Math.min(1, steerY || 0));
-  f.vx = approach(f.vx, steerX, cfg.maxSteerSpeed, cfg.steerAccel, cfg.steerFriction, dt);
-  f.vy = approach(f.vy, steerY, cfg.maxClimbSpeed, cfg.climbAccel, cfg.climbFriction, dt);
+  // 3D Flight's own, snappier control values (see config.js).
+  const rb = cfg.flightReverseBoost ?? 1;
+  f.vx = approach(f.vx, steerX, cfg.flightMaxSteerSpeed, cfg.flightSteerAccel, cfg.flightSteerFriction, dt, rb);
+  f.vy = approach(f.vy, steerY, cfg.flightMaxClimbSpeed, cfg.climbAccel, cfg.climbFriction, dt, rb);
   f.x += f.vx * dt;
   f.y += f.vy * dt;
   // The ground and the ceiling are soft limits: you stop, you don't crash.

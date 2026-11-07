@@ -230,7 +230,9 @@ function floatersRow(sp, p, z0, playerX, playerY) {
   const cfg = sp.config;
   wander(sp, 0.2);
   advanceLane(sp, z0 + cfg.spawnStep, playerX, playerY);
-  const count = Math.floor(p.density) + (sp.random() < p.density % 1 ? 1 : 0);
+  // 3D Heli has a lower ceiling, so it uses its own (smaller) density when given.
+  const density = (cfg.useChopperDensity && p.chopperDensity != null) ? p.chopperDensity : p.density;
+  const count = Math.floor(density) + (sp.random() < density % 1 ? 1 : 0);
   const band = cfg.flightBandHalfWidth;
   for (let i = 0; i < count; i++) {
     const s = p.minSize + sp.random() * (p.maxSize - p.minSize);
