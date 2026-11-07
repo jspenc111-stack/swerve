@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf,
+  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf, flightFeelOf,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -259,4 +259,49 @@ test('the 3D Heli collective side saves, and defaults to left', () => {
   assert.equal(collectiveSideOf(loadSave(store)), 'right');
   const bad = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { collectiveSide: 'middle' } }) }));
   assert.equal(collectiveSideOf(bad), 'left');
+});
+
+test('3D Flight Steering feel: defaults to fine; medium and quick round-trip', () => {
+  assert.equal(flightFeelOf(defaultSave()), 'fine');
+  assert.equal('flightFeel' in defaultSave().settings, false, 'only stored once set');
+  for (const feel of ['medium', 'quick', 'fine']) {
+    const store = memoryStorage();
+    const s = defaultSave();
+    s.settings.flightFeel = feel;
+    writeSave(s, store);
+    assert.equal(JSON.parse(store.getItem('swerve:v1')).settings.flightFeel, feel, 'saved inside swerve:v1');
+    assert.equal(flightFeelOf(loadSave(store)), feel);
+  }
+  // Not set: nothing extra is written.
+  const store = memoryStorage();
+  writeSave(defaultSave(), store);
+  assert.equal('flightFeel' in JSON.parse(store.getItem('swerve:v1')).settings, false);
+});
+
+test('3D Flight Steering feel: invalid values fall back to fine', () => {
+  for (const bad of ['FAST', 'toString', 3, null, true, '']) {
+    const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { flightFeel: bad } }) }));
+    assert.equal(flightFeelOf(loaded), 'fine', String(bad));
+    const s = defaultSave();
+    s.settings.flightFeel = bad;
+    const store = memoryStorage();
+    writeSave(s, store);
+    assert.equal('flightFeel' in JSON.parse(store.getItem('swerve:v1')).settings, false, `${bad} is not saved`);
+  }
+});
+
+test('3D Flight Steering feel: an older save (from before v1.5.4) loads unchanged and plays as Fine', () => {
+  const old = {
+    bestScore: 120, bestLevel: 3, flightBestScore: 900, flightBestLevel: 4,
+    settings: { controls: 'drag', sound: false, vibration: true, startLevel: 2, mode: 'flight', invertY: true, autoFire: false, collectiveSide: 'right' },
+    history: [{ score: 900, level: 4, startLevel: 1, at: 1000, mode: 'flight' }],
+  };
+  const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify(old) }));
+  assert.equal(flightFeelOf(loaded), 'fine');
+  assert.equal(loaded.flightBestScore, 900);
+  assert.equal(loaded.settings.controls, 'drag');
+  assert.equal(loaded.settings.invertY, true);
+  assert.equal(loaded.settings.autoFire, false);
+  assert.equal(collectiveSideOf(loaded), 'right');
+  assert.equal(loaded.history.length, 1);
 });

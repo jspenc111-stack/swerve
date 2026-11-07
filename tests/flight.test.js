@@ -94,14 +94,15 @@ test('Classic steering is unchanged by 3D Flight\'s new values', () => {
   assert.equal(CONFIG.joystickRadiusPx, 70);
 });
 
-test('the 3D Flight joystick reaches full steering at 55 px; the 3D Heli cyclic still needs 70 px', () => {
-  assert.equal(CONFIG.flightJoystickRadiusPx, 55);
+test('the 3D Flight joystick (Quick) reaches full steering at 55 px; the 3D Heli cyclic still needs 70 px', () => {
+  const quick = flightFeelPreset(CONFIG, 'quick');
+  assert.equal(quick.ringPx, 55);
   const input = { config: CONFIG, mode: 'touch', pointers: [{ startX: 100, startY: 300, x: 155, y: 245 }] };
-  const out = getFlightSteer(input, {});
+  const out = getFlightSteer(input, {}, false, quick);
   assert.equal(out.x, 1);
   assert.equal(out.y, 1);
   input.pointers[0].x = 100 + 27.5;
-  assert.equal(getFlightSteer(input, {}).x, 0.5);
+  assert.equal(getFlightSteer(input, {}, false, quick).x, 0.5);
   // 3D Heli: 55 px is not yet full deflection; 70 px is.
   const cc = createChopperControls(CONFIG);
   thumbDown(cc, 2, 700, 500, 1000);

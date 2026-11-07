@@ -18,6 +18,8 @@
 // floating joystick (the cyclic). See "3D Heli: two-thumb controls" below.
 // Tilt readings are only used live for steering; they are never stored.
 
+import { stickCurve, flightFeelPreset } from './flight.js';
+
 export function createInput(target, config) {
   const input = {
     mode: 'sides',
@@ -203,11 +205,18 @@ function tiltAxis(value, neutral, cfg) {
 
 // 3D Flight steering: out.x (-1 left … 1 right), out.y (-1 down … 1 up).
 // invertY flips up/down (like a plane's control stick).
-export function getFlightSteer(input, out, invertY = false) {
+// feel: the Steering feel preset (config.js flightFeelPresets; default: the
+// default preset). Its ringPx is the joystick size and its curve softens the
+// middle of the joystick and of tilt. The keyboard stays full on/off.
+// out.ringPx is the joystick size, for drawing the ring.
+export function getFlightSteer(input, out, invertY = false, feel = null) {
   const cfg = input.config;
+  const fl = feel || flightFeelPreset(cfg, cfg.flightFeelDefault);
+  const e = fl.curve || 0;
   out.x = 0;
   out.y = 0;
   out.joystick = null;
+  out.ringPx = fl.ringPx;
   const kx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
   const ky = (input.upKey ? 1 : 0) - (input.downKey ? 1 : 0);
   if (kx !== 0 || ky !== 0) {
@@ -216,14 +225,14 @@ export function getFlightSteer(input, out, invertY = false) {
     return out;
   }
   if (input.mode === 'tilt') {
-    if (input.gamma !== null) out.x = tiltAxis(input.gamma, input.neutral, cfg);
+    if (input.gamma !== null) out.x = stickCurve(tiltAxis(input.gamma, input.neutral, cfg), e);
     // Tilting the top of the phone toward you (bigger beta) climbs.
-    if (input.beta !== null) out.y = tiltAxis(input.beta, input.neutralBeta, cfg) * (invertY ? -1 : 1);
+    if (input.beta !== null) out.y = stickCurve(tiltAxis(input.beta, input.neutralBeta, cfg), e) * (invertY ? -1 : 1);
     return out;
   }
   const p = input.pointers[input.pointers.length - 1];
   if (!p) return out;
-  const R = cfg.flightJoystickRadiusPx; // 3D Flight's own (smaller) joystick
+  const R = fl.ringPx; // 3D Flight's own joystick size (from the Steering feel)
   // The centre follows the thumb: on each axis separately, if the thumb has
   // gone more than R past the centre, slide the centre along so it's exactly
   // R behind. Turning back then responds at once (full the other way is never
@@ -233,8 +242,8 @@ export function getFlightSteer(input, out, invertY = false) {
   else if (p.startX - p.x > R) p.startX = p.x + R;
   if (p.y - p.startY > R) p.startY = p.y - R;
   else if (p.startY - p.y > R) p.startY = p.y + R;
-  out.x = Math.max(-1, Math.min(1, (p.x - p.startX) / R));
-  out.y = Math.max(-1, Math.min(1, -(p.y - p.startY) / R)) * (invertY ? -1 : 1);
+  out.x = stickCurve(Math.max(-1, Math.min(1, (p.x - p.startX) / R)), e);
+  out.y = stickCurve(Math.max(-1, Math.min(1, -(p.y - p.startY) / R)), e) * (invertY ? -1 : 1);
   out.joystick = p;
   return out;
 }

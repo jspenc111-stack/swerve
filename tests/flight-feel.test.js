@@ -6,6 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFlight, stepFlight, stickCurve, flightFeelPreset } from '../js/flight.js';
 import { CONFIG, LEVELS } from '../js/config.js';
+import {
+  getFlightSteer, getSteer, createChopperControls, thumbDown, thumbMove, updateChopperControls,
+} from '../js/input.js';
 
 const NAMES = ['fine', 'medium', 'quick'];
 const close = (a, b, msg, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${msg}: ${a} vs ${b}`);
@@ -198,4 +201,121 @@ test('look smoothing does not change the physics', () => {
   assert.equal(a.y, b.y);
   assert.deepEqual(a.hitbox, b.hitbox);
   assert.notEqual(a.bankLook, b.bankLook, 'only the look differs');
+});
+
+// ---- Joystick, tilt and keyboard ----
+
+const touch = (x, y) => ({ config: CONFIG, mode: 'drag', pointers: [{ id: 1, startX: x, startY: y, x, y }] });
+const FINE = flightFeelPreset(CONFIG, 'fine');
+const MEDIUM = flightFeelPreset(CONFIG, 'medium');
+const QUICK = flightFeelPreset(CONFIG, 'quick');
+
+test('joystick: a 5 px drag gives a smaller input with Fine than with Medium, and Medium than Quick', () => {
+  const at = (feel, dx) => {
+    const input = touch(200, 400);
+    input.pointers[0].x = 200 + dx;
+    input.pointers[0].y = 400 - dx;
+    return getFlightSteer(input, {}, false, feel);
+  };
+  for (const dx of [5, 15]) {
+    const f = at(FINE, dx), m = at(MEDIUM, dx), q = at(QUICK, dx);
+    assert.ok(f.x > 0 && f.x < m.x && m.x < q.x, `${dx} px sideways: ${f.x} < ${m.x} < ${q.x}`);
+    assert.ok(f.y > 0 && f.y < m.y && m.y < q.y, `${dx} px up: ${f.y} < ${m.y} < ${q.y}`);
+  }
+  // Roughly the prototype's numbers (speed = input × top speed 13).
+  close(at(QUICK, 5).x * 13, 1.18, 'Quick 5 px', 0.01);
+  close(at(MEDIUM, 5).x * 13, 0.65, 'Medium 5 px', 0.01);
+  close(at(FINE, 5).x * 13, 0.40, 'Fine 5 px', 0.01);
+  // The default (no preset given) is Fine.
+  const input = touch(200, 400);
+  input.pointers[0].x = 205;
+  assert.equal(getFlightSteer(input, {}).x, at(FINE, 5).x);
+});
+
+test('joystick: full deflection is still full speed, and the ring size comes from the preset', () => {
+  for (const feel of [FINE, MEDIUM, QUICK]) {
+    const input = touch(200, 400);
+    const p = input.pointers[0];
+    p.x = 200 + feel.ringPx;
+    const out = getFlightSteer(input, {}, false, feel);
+    assert.equal(out.x, 1);
+    assert.equal(out.ringPx, feel.ringPx, 'ring size for drawing');
+    p.x = 200 + feel.ringPx - 1;
+    assert.ok(getFlightSteer(input, {}, false, feel).x < 1, 'just inside the ring is less than full');
+  }
+});
+
+test('joystick: the centre follows the thumb at the preset\'s ringPx (both axes)', () => {
+  for (const feel of [FINE, MEDIUM, QUICK]) {
+    const R = feel.ringPx;
+    const input = touch(200, 400);
+    const p = input.pointers[0];
+    p.x = 400;
+    p.y = 100;
+    getFlightSteer(input, {}, false, feel);
+    assert.equal(p.startX, 400 - R);
+    assert.equal(p.startY, 100 + R);
+    p.x = 400 - 2 * R; // two ring-widths back: full the other way
+    assert.equal(getFlightSteer(input, {}, false, feel).x, -1);
+    assert.equal(p.startX, 400 - R, 'inside the ring, the centre stays put');
+  }
+});
+
+test('joystick: diagonals still give full x and y together in every preset', () => {
+  for (const feel of [FINE, MEDIUM, QUICK]) {
+    for (const [dx, dy] of [[1, -1], [1, 1], [-1, -1], [-1, 1]]) {
+      const input = touch(300, 300);
+      const p = input.pointers[0];
+      p.x = 300 + dx * 200;
+      p.y = 300 + dy * 200;
+      const out = getFlightSteer(input, {}, false, feel);
+      assert.equal(out.x, dx);
+      assert.equal(out.y, -dy);
+      assert.equal(getFlightSteer(input, {}, true, feel).y, dy, 'inverted up/down still flips');
+    }
+  }
+});
+
+test('tilt: the curve softens small tilts on both axes; full tilt is still full', () => {
+  const tiltInput = (gamma, beta) => ({
+    config: CONFIG, mode: 'tilt', pointers: [], gamma, beta, neutral: 0, neutralBeta: 0,
+  });
+  const small = CONFIG.tiltDeadZoneDeg + 2;
+  const fine = getFlightSteer(tiltInput(small, -small), {}, false, FINE);
+  const quick = getFlightSteer(tiltInput(small, -small), {}, false, QUICK);
+  assert.ok(fine.x > 0 && fine.x < quick.x, `sideways: ${fine.x} < ${quick.x}`);
+  assert.ok(fine.y < 0 && fine.y > quick.y, `up/down: ${fine.y} vs ${quick.y}`);
+  close(fine.x, stickCurve(quick.x, FINE.curve), 'the same curve as the joystick');
+  const full = getFlightSteer(tiltInput(-60, 60), {}, false, FINE);
+  assert.equal(full.x, -1);
+  assert.equal(full.y, 1);
+});
+
+test('keyboard steering is not curved: it stays ±1', () => {
+  for (const feel of [FINE, MEDIUM, QUICK]) {
+    const input = { ...touch(200, 400), left: true, upKey: true };
+    input.pointers[0].x = 203; // a touch is ignored while keys are held
+    const out = getFlightSteer(input, {}, false, feel);
+    assert.equal(out.x, -1);
+    assert.equal(out.y, 1);
+  }
+});
+
+test('Classic drag is unaffected by the Steering feel (no curve, its own 80 px range)', () => {
+  const input = touch(200, 400);
+  input.pointers[0].x = 200 + CONFIG.dragRangePx / 4;
+  close(getSteer(input, 1000), 0.25, 'straight line');
+  input.pointers[0].x = 200 + CONFIG.dragRangePx * 2;
+  assert.equal(getSteer(input, 1000), 1);
+  assert.equal(input.pointers[0].startX, 200, 'its centre does not move');
+});
+
+test('3D Heli cyclic is unaffected (no curve, its own 70 px ring)', () => {
+  assert.equal(CONFIG.joystickRadiusPx, 70);
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 2, 700, 500, 1000);
+  thumbMove(cc, 2, 700 + 7, 500 - 14);
+  updateChopperControls(cc, 1 / 60);
+  close(cc.stickX, 0.1, 'straight line sideways');
+  close(cc.stickY, 0.2, 'straight line forward');
 });

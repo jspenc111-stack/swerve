@@ -96,6 +96,14 @@
     <div class="panel">
       <h2>Paused</h2>
       <button id="btn-resume" class="big-btn">Resume</button>
+      <div id="pause-feel" class="hidden">
+        <p class="label">Steering feel</p>
+        <div class="choice" role="radiogroup" aria-label="3D Flight steering feel">
+          <button class="choice-btn" data-flightfeel="fine" role="radio">Fine</button>
+          <button class="choice-btn" data-flightfeel="medium" role="radio">Medium</button>
+          <button class="choice-btn" data-flightfeel="quick" role="radio">Quick</button>
+        </div>
+      </div>
       <button id="btn-restart" class="mid-btn">Restart</button>
       <button id="btn-quit" class="mid-btn">Quit to menu</button>
     </div>
@@ -130,6 +138,13 @@
       <button id="btn-vibration" class="toggle-btn" role="switch">Vibration: On</button>
       <button id="btn-invert" class="toggle-btn" role="switch">3D up/down: Normal</button>
       <button id="btn-autofire" class="toggle-btn" role="switch">3D auto-fire: On</button>
+      <p class="label">3D Flight steering feel</p>
+      <div class="choice" role="radiogroup" aria-label="3D Flight steering feel">
+        <button class="choice-btn" data-flightfeel="fine" role="radio">Fine</button>
+        <button class="choice-btn" data-flightfeel="medium" role="radio">Medium</button>
+        <button class="choice-btn" data-flightfeel="quick" role="radio">Quick</button>
+      </div>
+      <p class="howto settings-note">Fine = precise small moves. Quick = fastest turns.</p>
       <p class="howto settings-note">3D Heli: left thumb = lift (stays put), right thumb = fly.</p>
       <button id="btn-collective" class="toggle-btn" role="switch">3D Heli collective: Left</button>
       <button id="btn-reset" class="mid-btn danger">Reset best scores</button>

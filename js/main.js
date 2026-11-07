@@ -9,7 +9,7 @@
 import { APP_VERSION, CONFIG, LEVELS } from './config.js';
 import { createGame, resetGame, stepGame, jumpToLevel } from './game.js';
 import { setSpawnBand } from './spawner.js';
-import { createFlight, resetFlight, stepFlight, jumpFlightToLevel } from './flight.js';
+import { createFlight, resetFlight, stepFlight, jumpFlightToLevel, flightFeelPreset } from './flight.js';
 import { createFlightRenderer, drawFlightFrame, drawChopperFrame } from './render3d.js';
 import {
   createChopper, resetChopper, stepChopper, chopperAutopilot, jumpChopperToLevel,
@@ -29,7 +29,7 @@ import {
 } from './input.js';
 import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, collectiveSideOf, seenChopperTipsOf,
+  bestScoreOf, runsIn, resetBests, collectiveSideOf, seenChopperTipsOf, flightFeelOf,
 } from './storage.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
@@ -404,6 +404,8 @@ function pause() {
   if (mode !== 'playing') return;
   mode = 'paused';
   clearInput(input);
+  $('pause-feel').classList.toggle('hidden', gameMode !== 'flight');
+  renderFlightFeel();
   showScreen('pause');
   keepAwake(false);
 }
@@ -581,6 +583,15 @@ function renderSettings() {
   const right = collectiveSideOf(save) === 'right';
   $('btn-collective').textContent = `3D Heli collective: ${right ? 'Right' : 'Left'}`;
   $('btn-collective').setAttribute('aria-checked', String(right));
+  renderFlightFeel();
+}
+
+// 3D Flight's Steering feel switch (in Settings and on the pause screen).
+function renderFlightFeel() {
+  const feel = flightFeelOf(save);
+  for (const btn of document.querySelectorAll('[data-flightfeel]')) {
+    btn.setAttribute('aria-checked', String(btn.dataset.flightfeel === feel));
+  }
 }
 
 function applySettings() {
@@ -774,9 +785,12 @@ function frame(now) {
   if (mode === 'playing') {
     let events;
     if (gameMode === 'flight') {
-      getFlightSteer(input, flightSteer, save.settings.invertY);
+      // The Steering feel is looked up every frame, so a change (even from
+      // the pause menu) takes effect at once. CONFIG itself is never changed.
+      const feel = flightFeelPreset(CONFIG, flightFeelOf(save));
+      getFlightSteer(input, flightSteer, save.settings.invertY, feel);
       events = stepFlight(flight, dt, flightSteer.x, flightSteer.y, getBoost(input, true),
-        save.settings.autoFire);
+        save.settings.autoFire, feel);
       const p = flightSteer.joystick;
       if (p) {
         view.joystick.active = true;
@@ -784,6 +798,7 @@ function frame(now) {
         view.joystick.y0 = p.startY;
         view.joystick.x = p.x;
         view.joystick.y = p.y;
+        view.joystick.ringPx = flightSteer.ringPx;
       }
     } else if (gameMode === 'heli') {
       heliHolding = getHeliHold(input);
@@ -1042,6 +1057,9 @@ $('btn-sound').addEventListener('click', () => changeSetting((s) => { s.sound = 
 $('btn-vibration').addEventListener('click', () => changeSetting((s) => { s.vibration = !s.vibration; }));
 $('btn-invert').addEventListener('click', () => changeSetting((s) => { s.invertY = !s.invertY; }));
 $('btn-autofire').addEventListener('click', () => changeSetting((s) => { s.autoFire = !s.autoFire; }));
+for (const btn of document.querySelectorAll('[data-flightfeel]')) {
+  btn.addEventListener('click', () => changeSetting((s) => { s.flightFeel = btn.dataset.flightfeel; }));
+}
 $('btn-collective').addEventListener('click', () => changeSetting((s) => {
   s.collectiveSide = collectiveSideOf(save) === 'right' ? 'left' : 'right';
 }));

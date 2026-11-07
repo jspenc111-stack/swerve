@@ -97,8 +97,6 @@ export const CONFIG = {
   flightMaxSteerSpeed: 13,    // top sideways speed
   flightSteerFriction: 10,    // how quickly sideways drifting stops when you let go
   flightMaxClimbSpeed: 10,    // top up/down speed
-  flightReverseBoost: 2.2,    // extra pull when steering against your movement (reversing) or easing off the same way (braking)
-  flightJoystickRadiusPx: 55, // drag this far from where you touched = full steering in 3D Flight
   flightAttitudeEase: 10,     // how quickly the jet's bank and nose angles follow its movement (look only; higher = snappier)
 
   // The "Steering feel" choice in Settings (3D Flight only). Each preset sets:

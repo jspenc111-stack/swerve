@@ -3,13 +3,16 @@
 //  - approach() uses the boosted pull for braking as well as reversing
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { approach } from '../js/flight.js';
+import { approach, flightFeelPreset } from '../js/flight.js';
 import {
   getFlightSteer, getSteer, createChopperControls, thumbDown, thumbMove, updateChopperControls,
 } from '../js/input.js';
 import { CONFIG } from '../js/config.js';
 
-const R = CONFIG.flightJoystickRadiusPx;
+// These v1.5.3 tests use the Quick Steering feel (= v1.5.3). The other
+// presets are tested in flight-feel.test.js.
+const QUICK = flightFeelPreset(CONFIG, 'quick');
+const R = QUICK.ringPx;
 const touch = (x, y) => ({ config: CONFIG, mode: 'drag', pointers: [{ id: 1, startX: x, startY: y, x, y }] });
 const close = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`);
 
@@ -20,19 +23,19 @@ test('3D Flight joystick: dragging far right moves the centre to 55 px behind th
   const input = touch(200, 400);
   const p = input.pointers[0];
   p.x = 320; // 120 px right
-  let out = getFlightSteer(input, {});
+  let out = getFlightSteer(input, {}, false, QUICK);
   assert.equal(out.x, 1);
   assert.equal(p.startX, 320 - R, 'centre slid along to 55 px behind');
   assert.equal(out.joystick.startX, 265, 'the ring (drawn at the centre) follows');
   p.x = 320 - 55; // back 55 px: middle
-  out = getFlightSteer(input, {});
+  out = getFlightSteer(input, {}, false, QUICK);
   close(out.x, 0, 'back 55 px gives about 0');
   p.x = 320 - 110; // back 110 px: full left
-  out = getFlightSteer(input, {});
+  out = getFlightSteer(input, {}, false, QUICK);
   assert.equal(out.x, -1, 'back 110 px gives full left');
   // Same the other way.
   p.x = 0;
-  getFlightSteer(input, {});
+  getFlightSteer(input, {}, false, QUICK);
   assert.equal(p.startX, R);
 });
 
@@ -40,22 +43,22 @@ test('3D Flight joystick: the up/down axis follows the thumb too', () => {
   const input = touch(200, 400);
   const p = input.pointers[0];
   p.y = 400 - 120; // 120 px up (screen y goes down)
-  let out = getFlightSteer(input, {});
+  let out = getFlightSteer(input, {}, false, QUICK);
   assert.equal(out.y, 1);
   assert.equal(p.startY, 280 + R);
   p.y = 280 + 55;
-  close(getFlightSteer(input, {}).y, 0, 'back 55 px gives about 0');
+  close(getFlightSteer(input, {}, false, QUICK).y, 0, 'back 55 px gives about 0');
   p.y = 280 + 110;
-  assert.equal(getFlightSteer(input, {}).y, -1, 'back 110 px gives full down');
+  assert.equal(getFlightSteer(input, {}, false, QUICK).y, -1, 'back 110 px gives full down');
   // Pushed far down, then back up.
   p.y = 700;
-  getFlightSteer(input, {});
+  getFlightSteer(input, {}, false, QUICK);
   assert.equal(p.startY, 700 - R);
   p.y = 700 - 110;
-  assert.equal(getFlightSteer(input, {}).y, 1);
+  assert.equal(getFlightSteer(input, {}, false, QUICK).y, 1);
   // Inverted up/down still flips the reading.
   p.y = 900;
-  assert.equal(getFlightSteer(input, {}, true).y, 1);
+  assert.equal(getFlightSteer(input, {}, true, QUICK).y, 1);
 });
 
 test('3D Flight joystick: a diagonal drag still gives full sideways and full up/down together', () => {
@@ -64,7 +67,7 @@ test('3D Flight joystick: a diagonal drag still gives full sideways and full up/
     const p = input.pointers[0];
     p.x = 300 + dx * 150;
     p.y = 300 + dy * 150;
-    const out = getFlightSteer(input, {});
+    const out = getFlightSteer(input, {}, false, QUICK);
     assert.equal(out.x, dx);
     assert.equal(out.y, -dy);
     assert.equal(Math.abs(p.x - p.startX), R);
@@ -77,7 +80,7 @@ test('3D Flight joystick: inside the ring, the centre stays put', () => {
   const p = input.pointers[0];
   p.x = 240;
   p.y = 370;
-  getFlightSteer(input, {});
+  getFlightSteer(input, {}, false, QUICK);
   assert.equal(p.startX, 200);
   assert.equal(p.startY, 400);
 });
@@ -112,8 +115,8 @@ test('3D Heli cyclic is unchanged: its centre does not move', () => {
 
 // ---- Fix 2: quick braking ----
 
-test('flightReverseBoost is 2.2; top speeds unchanged', () => {
-  assert.equal(CONFIG.flightReverseBoost, 2.2);
+test('Quick\'s boost is 2.2 (v1.5.3); top speeds unchanged', () => {
+  assert.equal(QUICK.boost, 2.2);
   assert.equal(CONFIG.flightMaxSteerSpeed, 13);
   assert.equal(CONFIG.flightMaxClimbSpeed, 10);
 });
