@@ -8,6 +8,7 @@ export const CONTROL_MODES = ['sides', 'tilt', 'drag'];
 export const GAME_MODES = ['classic', 'flight', 'heli', 'chopper'];
 export const DEFAULT_HISTORY_MAX = 100;
 export const COLLECTIVE_SIDES = ['left', 'right'];
+export const FLIGHT_FEELS = ['fine', 'medium', 'quick'];
 
 export function defaultSave() {
   return {
@@ -25,6 +26,8 @@ export function defaultSave() {
       // 3D Heli settings (collectiveSide, seenChopperTips) are only stored
       // once they've been set, so older saves load exactly as they were. Read
       // them with collectiveSideOf() and seenChopperTipsOf().
+      // 3D Flight's Steering feel (flightFeel) works the same way: read it
+      // with flightFeelOf().
     },
     history: [],
   };
@@ -85,6 +88,7 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
     if (typeof s.autoFire === 'boolean') save.settings.autoFire = s.autoFire;
     if (COLLECTIVE_SIDES.includes(s.collectiveSide)) save.settings.collectiveSide = s.collectiveSide;
     if (typeof s.seenChopperTips === 'boolean') save.settings.seenChopperTips = s.seenChopperTips;
+    if (FLIGHT_FEELS.includes(s.flightFeel)) save.settings.flightFeel = s.flightFeel;
   }
   if (Array.isArray(raw.history)) {
     for (const run of raw.history) {
@@ -121,6 +125,7 @@ export function writeSave(save, storage = defaultStorage()) {
   };
   if (COLLECTIVE_SIDES.includes(save.settings.collectiveSide)) clean.settings.collectiveSide = save.settings.collectiveSide;
   if (typeof save.settings.seenChopperTips === 'boolean') clean.settings.seenChopperTips = save.settings.seenChopperTips;
+  if (FLIGHT_FEELS.includes(save.settings.flightFeel)) clean.settings.flightFeel = save.settings.flightFeel;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(clean));
     return true;
@@ -137,6 +142,11 @@ export function collectiveSideOf(save) {
 // 3D Heli: true once the first-run tips have been seen ("Got it").
 export function seenChopperTipsOf(save) {
   return save.settings.seenChopperTips === true;
+}
+
+// 3D Flight: the Steering feel, 'fine' (the default), 'medium' or 'quick'.
+export function flightFeelOf(save) {
+  return FLIGHT_FEELS.includes(save.settings.flightFeel) ? save.settings.flightFeel : 'fine';
 }
 
 // Names of the best score / best level fields for each game mode.
