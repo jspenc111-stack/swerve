@@ -1,7 +1,8 @@
 // 3D Flight mode: movement, limits, rings, crashes and score.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFlight, resetFlight, stepFlight } from '../js/flight.js';
+import { createFlight, resetFlight, stepFlight, approach } from '../js/flight.js';
+import { getFlightSteer, createChopperControls, thumbDown, thumbMove, updateChopperControls } from '../js/input.js';
 import { flightHitbox, hitsBox } from '../js/collision.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 
@@ -36,11 +37,83 @@ test('altitude stays between the ground and the ceiling, without crashing', () =
   assert.equal(f.crashed, false);
 });
 
-test('sideways steering works like Classic', () => {
+test('3D Flight steering uses its own quicker values', () => {
   const f = fresh();
   run(f, 1, 1, 0);
-  assert.ok(Math.abs(f.vx - CONFIG.maxSteerSpeed) < 1e-9);
+  assert.ok(Math.abs(f.vx - CONFIG.flightMaxSteerSpeed) < 1e-9, 'top sideways speed is flightMaxSteerSpeed');
+  assert.ok(CONFIG.flightMaxSteerSpeed > CONFIG.maxSteerSpeed, 'quicker than Classic');
   assert.ok(f.x > 5);
+  const c = fresh();
+  run(c, 0.3, 0, 1); // short climb, well below the ceiling
+  assert.ok(Math.abs(c.vy - CONFIG.flightMaxClimbSpeed) < 1e-9, 'top up/down speed is flightMaxClimbSpeed');
+
+  // Time (in frames) to reach full speed from rest vs. from full speed the other way.
+  const framesTo = (f, sx, target) => {
+    let n = 0;
+    while (Math.abs(f.vx - target) > 1e-9 && n < 600) { stepFlight(f, 1 / 60, sx, 0); n++; }
+    return n;
+  };
+  const a = fresh();
+  const fromRest = framesTo(a, 1, CONFIG.flightMaxSteerSpeed);
+  const b = fresh();
+  run(b, 1, -1, 0); // full speed left
+  const turnAround = framesTo(b, 1, CONFIG.flightMaxSteerSpeed);
+  // Without the boost, a turn-around is exactly two "from rest" runs.
+  const c2 = createFlight({ ...CONFIG, flightReverseBoost: 1 }, LEVELS, 3);
+  c2.invincible = true;
+  run(c2, 1, -1, 0);
+  const plain = framesTo(c2, 1, CONFIG.flightMaxSteerSpeed);
+  assert.ok(turnAround < plain && turnAround < 2 * fromRest,
+    `the reverse boost makes turning around quicker (${turnAround} frames vs ${plain} without it, ${fromRest} from rest)`);
+  assert.ok(turnAround * (1000 / 60) < 250, `turn-around in ${(turnAround * 1000 / 60).toFixed(0)} ms`);
+});
+
+test('approach(): the reverse boost only applies when steering against your movement', () => {
+  const dt = 1 / 60;
+  // Same direction: normal pull.
+  assert.ok(Math.abs(approach(2, 1, 10, 60, 7, dt, 2) - (2 + 1)) < 1e-9);
+  // Against the movement: boosted pull.
+  assert.ok(Math.abs(approach(-2, 1, 10, 60, 7, dt, 2) - (-2 + 2)) < 1e-9);
+  // From rest: normal pull.
+  assert.ok(Math.abs(approach(0, -1, 10, 60, 7, dt, 2) - -1) < 1e-9);
+  // No boost given: unchanged behavior.
+  assert.ok(Math.abs(approach(-2, 1, 10, 60, 7, dt) - (-2 + 1)) < 1e-9);
+});
+
+test('Classic steering is unchanged by 3D Flight\'s new values', () => {
+  assert.equal(CONFIG.steerAccel, 55);
+  assert.equal(CONFIG.maxSteerSpeed, 11);
+  assert.equal(CONFIG.steerFriction, 7);
+  assert.equal(CONFIG.joystickRadiusPx, 70);
+});
+
+test('the 3D Flight joystick reaches full steering at 55 px; the 3D Heli cyclic still needs 70 px', () => {
+  assert.equal(CONFIG.flightJoystickRadiusPx, 55);
+  const input = { config: CONFIG, mode: 'touch', pointers: [{ startX: 100, startY: 300, x: 155, y: 245 }] };
+  const out = getFlightSteer(input, {});
+  assert.equal(out.x, 1);
+  assert.equal(out.y, 1);
+  input.pointers[0].x = 100 + 27.5;
+  assert.equal(getFlightSteer(input, {}).x, 0.5);
+  // 3D Heli: 55 px is not yet full deflection; 70 px is.
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 2, 700, 500, 1000);
+  thumbMove(cc, 2, 700 + 55, 500);
+  updateChopperControls(cc, 1 / 60);
+  assert.ok(Math.abs(cc.stickX - 55 / 70) < 1e-9, `3D Heli cyclic at 55 px: ${cc.stickX}`);
+  thumbMove(cc, 2, 700 + 70, 500);
+  updateChopperControls(cc, 1 / 60);
+  assert.equal(cc.stickX, 1);
+});
+
+test('the 3D Flight course is laid out with the course values (11 / 8), not the jet\'s new top speeds', () => {
+  const f = fresh();
+  stepFlight(f, 1 / 60, 0, 0);
+  const v = f.baseSpeed * CONFIG.boostMultiplier;
+  assert.ok(Math.abs(f.spawner.maxSlopeX - (CONFIG.laneSlopeFactor * 11) / v) < 1e-9);
+  assert.ok(Math.abs(f.spawner.maxSlopeY - (CONFIG.laneSlopeFactor * 8) / v) < 1e-9);
+  assert.equal(CONFIG.maxSteerSpeed, 11);
+  assert.equal(CONFIG.maxClimbSpeed, 8);
 });
 
 test('speed is a share of Classic speed, and boost multiplies it', () => {

@@ -183,7 +183,9 @@ function randomBetween(a, b) {
 // Tilt the view toward the turn, easing in and out.
 function updateBank(dt) {
   if (gameMode === 'heli' || gameMode === 'chopper') return; // helicopter views don't bank
-  const target = (cur().vx / CONFIG.maxSteerSpeed) * CONFIG.bankMaxDeg * DEG;
+  // Each mode tilts fully at its own top sideways speed (3D Flight's is quicker).
+  const maxVx = gameMode === 'flight' ? CONFIG.flightMaxSteerSpeed : CONFIG.maxSteerSpeed;
+  const target = (cur().vx / maxVx) * CONFIG.bankMaxDeg * DEG;
   view.bank += (target - view.bank) * (1 - Math.exp(-CONFIG.bankEase * dt));
 }
 

@@ -222,7 +222,7 @@ export function getFlightSteer(input, out, invertY = false) {
   }
   const p = input.pointers[input.pointers.length - 1];
   if (!p) return out;
-  const R = cfg.joystickRadiusPx;
+  const R = cfg.flightJoystickRadiusPx; // 3D Flight's own (smaller) joystick
   out.x = Math.max(-1, Math.min(1, (p.x - p.startX) / R));
   out.y = Math.max(-1, Math.min(1, -(p.y - p.startY) / R)) * (invertY ? -1 : 1);
   out.joystick = p;

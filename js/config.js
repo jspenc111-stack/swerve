@@ -73,9 +73,9 @@ export const CONFIG = {
   flightMinAltitude: 0.6,     // lowest you can fly
   flightMaxAltitude: 9,       // highest you can fly (the ceiling)
   flightStartAltitude: 3,
-  climbAccel: 45,             // how quickly up/down speed builds
-  maxClimbSpeed: 8,           // top up/down speed
-  climbFriction: 7,           // how quickly up/down drifting stops when you let go
+  climbAccel: 80,             // how quickly up/down speed builds
+  maxClimbSpeed: 8,           // up/down speed the course is laid out for (the jet's own top speed is flightMaxClimbSpeed)
+  climbFriction: 10,          // how quickly up/down drifting stops when you let go
   flightCameraBack: 3.8,      // camera distance behind the jet
   flightCameraAbove: 1.5,     // camera height above the jet
   flightCameraFollow: 6,      // how tightly the camera follows climbs and dives
@@ -87,7 +87,18 @@ export const CONFIG = {
   minGapHeight: 2.0,          // smallest opening height ever allowed (like minGapWidth)
   ringBonus: 25,              // points for flying through a ring
   ringSize: 3.2,              // width/height of a ring's opening
-  joystickRadiusPx: 70,       // drag this far from where you touched = full steering
+  joystickRadiusPx: 70,       // drag this far from where you touched = full steering (3D Heli's cyclic)
+
+  // ---- 3D Flight controls ---------------------------------------------------
+  // 3D Flight has its own, snappier control values (Classic and 3D Heli keep
+  // theirs). The course is still laid out with maxSteerSpeed and
+  // maxClimbSpeed, so the jet has spare agility and fairness only gets easier.
+  flightSteerAccel: 90,       // how quickly sideways speed builds up
+  flightMaxSteerSpeed: 13,    // top sideways speed
+  flightSteerFriction: 10,    // how quickly sideways drifting stops when you let go
+  flightMaxClimbSpeed: 10,    // top up/down speed
+  flightReverseBoost: 1.8,    // extra pull when steering against your movement (quick turn-arounds)
+  flightJoystickRadiusPx: 55, // drag this far from where you touched = full steering in 3D Flight
 
   // ---- 3D Flight shooting ---------------------------------------------------
   fireRate: 6,                // shots per second (auto-fire)

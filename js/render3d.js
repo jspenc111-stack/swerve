@@ -78,7 +78,7 @@ export function drawFlightFrame(r, s, f, view) {
   drawFx(r, f, cam, true); // floating "+50" text on top
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
-  if (view.joystick && view.joystick.active) drawJoystick(r, view.joystick);
+  if (view.joystick && view.joystick.active) drawJoystick(r, view.joystick, r.config.flightJoystickRadiusPx);
   if (view.flash > 0) {
     ctx.globalAlpha = Math.min(1, view.flash);
     ctx.fillStyle = '#ffffff';
@@ -460,9 +460,9 @@ function drawHitbox(r, f, cam, hb = f.hitbox) {
   }
 }
 
-function drawJoystick(r, j) {
+// R: the ring size (3D Flight's flightJoystickRadiusPx, or 3D Heli's joystickRadiusPx).
+function drawJoystick(r, j, R = r.config.joystickRadiusPx) {
   const ctx = r.ctx;
-  const R = r.config.joystickRadiusPx;
   ctx.globalAlpha = 0.35;
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 3;
@@ -635,8 +635,8 @@ function drawJet(r, s, p, f, cam) {
   const { ctx, config: cfg } = r;
   const mats = jetMaterials(s, p.ship);
   const DEG = Math.PI / 180;
-  const roll = (f.vx / cfg.maxSteerSpeed) * cfg.flightRollDeg * DEG;
-  const pitch = (f.vy / cfg.maxClimbSpeed) * cfg.flightPitchDeg * DEG;
+  const roll = (f.vx / cfg.flightMaxSteerSpeed) * cfg.flightRollDeg * DEG;
+  const pitch = (f.vy / cfg.flightMaxClimbSpeed) * cfg.flightPitchDeg * DEG;
   const yaw = 0.15 * Math.atan2(f.vx, Math.max(1, f.speed));
   const cr = Math.cos(roll), sr = Math.sin(roll);
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
