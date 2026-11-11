@@ -7,7 +7,7 @@
 // minGapWidth wide.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSpawner, updateSpawner, setSpawnBand } from '../js/spawner.js';
+import { createSpawner, updateSpawner, setSpawnBand, laneAt, laneClearance } from '../js/spawner.js';
 import { createGame, resetGame, stepGame } from '../js/game.js';
 import { CONFIG, LEVELS } from '../js/config.js';
 import { levelForDistance, levelBaseSpeed } from '../js/levels.js';
@@ -25,7 +25,9 @@ const PATTERNS = {
   'scatter (sparse)': { type: 'scatter', density: 1.6 },
   'scatter (very dense)': { type: 'scatter', density: 8 },
   'scatter (dense, big swing)': { type: 'scatter', density: 8, swing: 9 },
+  'scatter (dense, flank)': { type: 'scatter', density: 8, swing: 9, flank: 1 },
   clusters: { type: 'clusters', chance: 1, min: 3, max: 6 },
+  'clusters (flank)': { type: 'clusters', chance: 1, min: 3, max: 6, swing: 9, flank: 1 },
   'clusters (swing)': { type: 'clusters', chance: 1, min: 3, max: 6, swing: 9 },
   gates: { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth },
   'gates (long fences, busy)': { type: 'gates', rowSpacing: 12, gapWidth: CONFIG.minGapWidth, wingCubes: 9, between: 3 },
@@ -270,4 +272,37 @@ test('gates are fences of spaced posts with one opening, not walls across the fi
     assert.ok(opening >= 3.2 - 1e-6, 'one real opening');
     for (const g of gaps) if (g !== opening) assert.ok(g > 0.2 && g < CONFIG.shipWidth * CONFIG.hitboxScale, 'posts are spaced but too close to squeeze through');
   }
+});
+
+test('flank cubes sit just beside the open lane and never inside its keep-out', () => {
+  // No ordinary cubes at all, so every cube here is a flank cube.
+  const levels = singleLevel({ type: 'scatter', density: 0, swing: 6, flank: 1.5 });
+  for (const band of BANDS) for (let seed = 1; seed <= 10; seed++) {
+    const sp = createSpawner(CONFIG, levels, seed * 311);
+    setSpawnBand(sp, band);
+    let z = 0;
+    let seen = 0;
+    for (let i = 0; i < 30 * FPS; i++) {
+      z += CONFIG.baseSpeed / FPS;
+      updateSpawner(sp, z, 0, CONFIG.baseSpeed);
+      // Cubes placed this frame all belong to the row the lane has just reached.
+      const keepOut = laneClearance(sp, CONFIG.minGapWidth);
+      for (let k = sp.cubes.length - sp.lastSpawned; k < sp.cubes.length; k++) {
+        const c = sp.cubes[k];
+        const off = Math.abs(c.x - laneAt(sp, c.z));
+        assert.ok(off >= keepOut - 1e-9, `seed ${seed}: flank cube ${off.toFixed(2)} from the lane centre, keep-out ${keepOut.toFixed(2)}`);
+        assert.ok(off <= keepOut + 1.8 + 1e-9, `seed ${seed}: flank cube too far from the lane (${off.toFixed(2)})`);
+        seen++;
+      }
+    }
+    // About 1.5 per row, however wide the band is (not scaled by the band).
+    const rows = (30 * CONFIG.baseSpeed) / CONFIG.spawnStep;
+    assert.ok(seen > rows * 1.0 && seen < rows * 1.8, `seed ${seed}, band ${band}: ${seen} flank cubes in ${rows} rows`);
+  }
+});
+
+test('without flank, a pattern places exactly the same cubes as before', () => {
+  const a = generate(singleLevel({ type: 'scatter', density: 3, swing: 4 }), 5, () => CONFIG.baseSpeed);
+  const b = generate(singleLevel({ type: 'scatter', density: 3, swing: 4, flank: 0 }), 5, () => CONFIG.baseSpeed);
+  assert.deepEqual(a.cubes, b.cubes);
 });

@@ -18,6 +18,11 @@ function checkPattern(p, where) {
     assert.equal(typeof p.swing, 'number', `${where}: swing must be a number`);
     assert.ok(p.swing > 0 && p.swing <= CONFIG.laneLeash - 1, `${where}: swing must be above 0 and at most laneLeash − 1`);
   }
+  if (p.flank !== undefined) {
+    assert.ok(p.type === 'scatter' || p.type === 'clusters', `${where}: flank only works on scatter and clusters`);
+    assert.equal(typeof p.flank, 'number', `${where}: flank must be a number`);
+    assert.ok(p.flank >= 0, `${where}: flank must be 0 or more`);
+  }
   switch (p.type) {
     case 'scatter': num('density'); break;
     case 'clusters':
