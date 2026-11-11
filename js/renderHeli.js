@@ -6,11 +6,21 @@
 // screen the cave is a band across the middle; the space above and below is
 // filled with more rock, so it never looks letterboxed.
 //
-// Distant rock layers drift slower than the cave (0.2× and 0.45×): this is
-// "parallax", and it makes the scene look deep.
+// Distant rock layers drift slower than the cave (0.08×, 0.2× and 0.45×):
+// this is "parallax", and it makes the scene look deep.
+//
+// v1.6 polish (all look only): a third, far rock layer; slow dust motes in
+// the air; a headlight cone on dark levels (Night and Storm); a faint light
+// rim on the cave edges nearest the helicopter; a soft glow around gems;
+// rock layers (strata) in the walls, from a pattern that is built once;
+// rain on the Storm level; a shockwave ring on a crash.
+// On Visual effects: Lite the dust motes and the rain are off.
 
 import { mixColor } from './levels.js';
 import { obstacleRects } from './caveSpawner.js';
+import { glowSprite, drawGlow } from './sprites.js';
+import { drawRain, sceneOf } from './scenery.js';
+import { luminance } from './render.js';
 
 const TAU = Math.PI * 2;
 
@@ -21,6 +31,8 @@ export function createHeliRenderer() {
     parts: [],     // crash bits and gem sparkles { x, y, vx, vy, life, maxLife, color, size, gravity }
     pops: [],      // floating "+25" text { x, y, life }
     smokeDebt: 0,
+    shockAge: -1,  // seconds since the crash shockwave started (-1 = none)
+    shockX: 0, shockY: 0,
     rotor: 0,      // main rotor angle
     tailRotor: 0,
     shadeKey: '',
@@ -93,26 +105,39 @@ export function updateHeliFx(hr, heli, cfg, dt, holding, flying) {
     hr.pops[w++] = p;
   }
   hr.pops.length = w;
+  if (hr.shockAge >= 0) {
+    hr.shockAge += dt;
+    if (hr.shockAge > SHOCK_SEC) hr.shockAge = -1;
+  }
 }
+const SHOCK_SEC = 0.5;
 
 export function clearHeliFx(hr) {
   hr.smoke.length = 0;
   hr.parts.length = 0;
   hr.pops.length = 0;
   hr.smokeDebt = 0;
+  hr.shockAge = -1;
 }
 
+const EXHAUST_PT = { x: 0, y: 0 };
 // Where the exhaust comes out (behind the engine, under the rotor).
 function exhaustPoint(heli, cfg) {
   const k = cfg.heliWidth / 2;
   const lx = -0.32 * k;
   const ly = 0.32 * k;
   const c = Math.cos(heli.pitch), s = Math.sin(heli.pitch);
-  return { x: heli.distance + lx * c - ly * s, y: heli.y + lx * s + ly * c };
+  EXHAUST_PT.x = heli.distance + lx * c - ly * s;
+  EXHAUST_PT.y = heli.y + lx * s + ly * c;
+  return EXHAUST_PT;
 }
 
 // A crash: bits in the ship color and orange, plus a puff of smoke.
 export function heliCrashBurst(hr, heli, shipColor) {
+  // A bright ring bursts out from the crash.
+  hr.shockAge = 0;
+  hr.shockX = heli.distance;
+  hr.shockY = heli.y;
   for (let i = 0; i < 34; i++) {
     const a = Math.random() * TAU;
     const sp = 2 + Math.random() * 7;
@@ -135,12 +160,15 @@ export function heliCrashBurst(hr, heli, shipColor) {
 
 // A gem: a few gold sparkles and a floating "+25".
 export function heliGemSparkle(hr, heli, points) {
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * TAU;
+  // A bright burst: a fast outer ring and a slower inner one.
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * TAU;
+    const fast = i % 2 === 0;
     hr.parts.push({
       x: heli.distance + 0.4, y: heli.y,
-      vx: Math.cos(a) * 3.5 + heli.speed * 0.6, vy: Math.sin(a) * 3.5,
-      life: 0.45, maxLife: 0.45, color: i % 2 ? '#ffffff' : '#ffd166', size: 0.07, gravity: 0,
+      vx: Math.cos(a) * (fast ? 5.5 : 2.8) + heli.speed * 0.6, vy: Math.sin(a) * (fast ? 5.5 : 2.8),
+      life: fast ? 0.5 : 0.65, maxLife: fast ? 0.5 : 0.65,
+      color: i % 4 === 0 ? '#ffffff' : i % 4 === 2 ? '#fff3c4' : '#ffd166', size: fast ? 0.1 : 0.07, gravity: 0,
     });
   }
   hr.pops.push({ x: heli.distance + 0.8, y: heli.y + 0.8, life: 0.8, text: `+${points}` });
@@ -151,7 +179,12 @@ function updateShades(hr, p) {
   if (key === hr.shadeKey) return;
   hr.shadeKey = key;
   const grid = p.grid || mixColor(p.ground, p.sky, 0.5);
+  hr.dark = luminance(p.sky) < 0.36; // dark levels (Night, Storm) get a headlight
+  hr.strata = null; // the wall pattern is rebuilt for the new colours
   hr.shades = {
+    farthest: mixColor(grid, p.sky, 0.78),
+    rimLight: mixColor(p.ground, '#ffffff', 0.55),
+    mote: mixColor(p.skyHorizon, '#ffffff', 0.5),
     rim: mixColor(p.ground, '#000000', 0.25),
     highlight: mixColor(p.ground, '#ffffff', 0.22),
     far: mixColor(grid, p.sky, 0.55),
@@ -189,13 +222,23 @@ export function drawHeliFrame(r, hr, heli, view) {
   // Margin so tilted corners never show empty space.
   const pad = roll ? Math.abs(Math.sin(roll)) * Math.max(w, h) + 20 : 20;
 
+  const lite = !!view.lite;
   drawBackground(r, hr, p, pad);
+  if (!lite) drawMotes(r, hr, heli.clock);
+  if (hr.dark && view.showShip !== false && !heli.crashed) drawHeadlight(r, hr, heli);
   drawObstacles(r, hr, heli.spawner.obstacles, view.glow || 0);
-  drawWalls(r, hr, p, heli.spawner.columns, pad, view.glow || 0);
+  drawWalls(r, hr, p, heli.spawner.columns, pad, view.glow || 0, heli.crashed ? null : heli);
   drawGems(r, hr, heli.spawner.gems, heli.clock);
   drawSmoke(r, hr);
   if (view.showShip !== false && !heli.crashed) drawHeli(r, hr, p, heli, view);
   drawParts(r, hr);
+  if (view.level && sceneOf(view.level).rain) {
+    ctx.save();
+    ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
+    drawRain(ctx, r.scenery, view, w, h);
+    ctx.restore();
+  }
+  if (hr.shockAge >= 0) drawShock(r, hr);
   if (view.hitboxes) drawDebug(r, hr, heli);
 
   if (view.flash > 0) {
@@ -222,9 +265,57 @@ function drawBackground(r, hr, p, pad) {
   }
   ctx.fillStyle = hr.grad;
   ctx.fillRect(-pad, -pad, w + 2 * pad, h + 2 * pad);
-  // Two layers of distant rock, from the ceiling and from the floor.
+  // Three layers of distant rock, from the ceiling and from the floor.
+  ridges(r, hr, hr.shades.farthest, 0.08, 0.11, 21.7, pad);
   ridges(r, hr, hr.shades.far, 0.2, 0.17, 0, pad);
   ridges(r, hr, hr.shades.near, 0.45, 0.25, 7.3, pad);
+}
+
+// Slow floating dust motes in the air, at two depths. Their places come from
+// fixed "hash" numbers and the clock, so nothing is stored or created.
+function hash01(n) {
+  const v = Math.sin(n) * 43758.5453;
+  return v - Math.floor(v);
+}
+const MOTES = 26;
+function drawMotes(r, hr, clock) {
+  const { ctx, w, h } = r;
+  ctx.fillStyle = hr.shades.mote;
+  for (let i = 0; i < MOTES; i++) {
+    const depth = i % 2 ? 0.55 : 0.3;            // how fast it slides past
+    const span = w + 40;
+    let x = (hash01(i * 12.9898) * span - hr.distance * hr.scale * depth + clock * (4 + 6 * hash01(i * 3.3))) % span;
+    if (x < 0) x += span;
+    const y = h * (0.12 + 0.76 * hash01(i * 78.233)) + Math.sin(clock * (0.3 + 0.5 * hash01(i * 1.7)) + i) * h * 0.02;
+    const size = depth > 0.5 ? 2.2 : 1.5;
+    ctx.globalAlpha = (depth > 0.5 ? 0.3 : 0.2) * (0.6 + 0.4 * Math.sin(clock * 0.8 + i * 2.1));
+    ctx.fillRect(x - 20, y, size, size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A soft headlight cone ahead of the helicopter (dark levels only): two
+// overlapping wedges of light, a long faint one and a short brighter one.
+function drawHeadlight(r, hr, heli) {
+  const { ctx } = r;
+  const k = r.config.heliWidth / 2;
+  const c = Math.cos(heli.pitch), s = Math.sin(heli.pitch);
+  const x0 = sx(hr, heli.distance + 0.95 * k * c), y0 = sy(hr, heli.y + 0.95 * k * s - 0.05);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = '#fff3cf';
+  for (let pass = 0; pass < 2; pass++) {
+    const len = (pass === 0 ? 9 : 5) * hr.scale;
+    const spread = (pass === 0 ? 2.0 : 1.0) * hr.scale;
+    ctx.globalAlpha = pass === 0 ? 0.07 : 0.09;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + len * c - (-spread) * s, y0 - len * s - spread * c);
+    ctx.lineTo(x0 + len * c - spread * s, y0 - len * s + spread * c);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function ridgeHeight(u) {
@@ -241,7 +332,7 @@ function ridges(r, hr, color, speed, depth, seed, pad) {
   const shift = hr.distance * speed * s;
   const step = Math.max(6, s * 0.8);
   ctx.fillStyle = color;
-  for (const dir of [1, -1]) {
+  for (let dir = 1; dir >= -1; dir -= 2) {
     ctx.beginPath();
     const edge = dir > 0 ? top - pad - 400 : bottom + pad + 400;
     ctx.moveTo(-pad, edge);
@@ -258,12 +349,13 @@ function ridges(r, hr, color, speed, depth, seed, pad) {
 
 // The cave walls. The drawn edge never sits inside open space that would
 // crash you: at each column boundary it uses the lower ceiling / higher floor.
-function drawWalls(r, hr, p, cols, pad, glow) {
+function drawWalls(r, hr, p, cols, pad, glow, heli) {
   const { ctx } = r;
   if (!cols.length) return;
   const sh = hr.shades;
   const lw = Math.max(1.5, hr.scale * 0.09);
-  for (const ceiling of [true, false]) {
+  for (let side = 0; side < 2; side++) {
+    const ceiling = side === 0;
     const pts = edgePoints(hr, cols, ceiling);
     const edge = ceiling ? -pad - 400 : r.h + pad + 400;
     ctx.beginPath();
@@ -271,7 +363,9 @@ function drawWalls(r, hr, p, cols, pad, glow) {
     for (let i = 0; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
     ctx.lineTo(pts[pts.length - 2], edge);
     ctx.closePath();
-    ctx.fillStyle = p.ground;
+    // The rock, with subtle horizontal layers (strata): one fill, from a
+    // pattern that is built once per level colour.
+    ctx.fillStyle = strataPattern(ctx, hr, p);
     ctx.fill();
     // Soft lighter highlight just inside the edge, then the darker rim.
     ctx.save();
@@ -293,7 +387,49 @@ function drawWalls(r, hr, p, cols, pad, glow) {
     ctx.strokeStyle = sh.rim;
     ctx.lineWidth = lw;
     ctx.stroke();
+    // A faint rim of light on the cave edge nearest the helicopter.
+    if (heli) {
+      const hx = sx(hr, heli.distance);
+      for (let band = 0; band < 2; band++) {
+        const reach = (band === 0 ? 7 : 3.5) * hr.scale;
+        ctx.beginPath();
+        let pen = false;
+        for (let i = 0; i < pts.length; i += 2) {
+          if (Math.abs(pts[i] - hx) > reach) { pen = false; continue; }
+          if (pen) ctx.lineTo(pts[i], pts[i + 1]); else ctx.moveTo(pts[i], pts[i + 1]);
+          pen = true;
+        }
+        ctx.strokeStyle = sh.rimLight;
+        ctx.globalAlpha = band === 0 ? 0.22 : 0.3;
+        ctx.lineWidth = lw * (band === 0 ? 1.2 : 1.6);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
   }
+}
+
+// The wall pattern: a small tile of faint lighter and darker horizontal
+// bands. Built once per palette (never per frame) and reused.
+function strataPattern(ctx, hr, p) {
+  if (hr.strata) return hr.strata;
+  const tile = hr.strataTile || (hr.strataTile = document.createElement('canvas'));
+  tile.width = 8;
+  tile.height = 96;
+  const g = tile.getContext('2d');
+  g.globalAlpha = 1;
+  g.fillStyle = p.ground;
+  g.fillRect(0, 0, 8, 96);
+  const light = mixColor(p.ground, '#ffffff', 0.5);
+  const dark = mixColor(p.ground, '#000000', 0.5);
+  const bands = [[6, 5, light, 0.1], [19, 3, dark, 0.12], [31, 8, light, 0.06], [47, 4, dark, 0.1], [58, 2, light, 0.12], [70, 7, dark, 0.07], [86, 4, light, 0.08]];
+  for (const [y, hgt, color, alpha] of bands) {
+    g.globalAlpha = alpha;
+    g.fillStyle = color;
+    g.fillRect(0, y, 8, hgt);
+  }
+  hr.strata = ctx.createPattern(tile, 'repeat');
+  return hr.strata;
 }
 
 const PTS = [];
@@ -345,9 +481,10 @@ function drawObstacles(r, hr, obstacles, glow) {
       ctx.closePath();
       ctx.fillStyle = sh.dark;
       ctx.fill();
-      if (glow > 0) glowOutline(ctx, glow, sh.lit, () => {
+      if (glow > 0) {
         ctx.beginPath(); ctx.moveTo(x0, baseY); ctx.lineTo(tipX, tipY); ctx.lineTo(x1, baseY);
-      });
+        glowOutline(ctx, glow, sh.lit);
+      }
       continue;
     }
     obstacleRects(o, hr.rects);
@@ -355,7 +492,10 @@ function drawObstacles(r, hr, obstacles, glow) {
       const ax = sx(hr, rx0), bx = sx(hr, rx1);
       const ay = sy(hr, ry1), by = sy(hr, ry0); // screen top, bottom
       litBox(ctx, sh, hr.cubeColor, ax, ay, bx - ax, by - ay, bevel);
-      if (glow > 0) glowOutline(ctx, glow, sh.lit, () => { ctx.beginPath(); ctx.rect(ax, ay, bx - ax, by - ay); });
+      if (glow > 0) {
+        ctx.beginPath(); ctx.rect(ax, ay, bx - ax, by - ay);
+        glowOutline(ctx, glow, sh.lit);
+      }
     }
   }
 }
@@ -372,9 +512,9 @@ function litBox(ctx, sh, color, x, y, w, h, bevel) {
   ctx.fillRect(x + w - b, y + b, b, h - b); // right edge
 }
 
-function glowOutline(ctx, glow, color, path) {
+// Strokes the current path as a neon outline (build the path first).
+function glowOutline(ctx, glow, color) {
   ctx.save();
-  path();
   ctx.globalAlpha = glow * 0.45;
   ctx.strokeStyle = color;
   ctx.lineWidth = 6;
@@ -385,7 +525,8 @@ function glowOutline(ctx, glow, color, path) {
   ctx.restore();
 }
 
-// Small gold diamonds that slowly spin, with a white glint.
+let gemGlow = null;
+// Small gold diamonds that slowly spin, with a white glint and a soft glow.
 function drawGems(r, hr, gems, time) {
   const { ctx } = r;
   const s = hr.scale;
@@ -397,6 +538,12 @@ function drawGems(r, hr, gems, time) {
     const k = Math.cos(time * 2.4 + g.x);
     const hw = g.r * s * Math.max(0.15, Math.abs(k));
     const hh = g.r * s * 1.25;
+    // A soft glow around the gem.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.55 + 0.2 * Math.sin(time * 3.1 + g.x);
+    drawGlow(ctx, gemGlow || (gemGlow = glowSprite('rgba(255,225,130,0.75)', 'rgba(255,190,60,0.3)', 0.4)), x, y, hh * 2.6);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.moveTo(x, y - hh);
     ctx.lineTo(x + hw, y);
@@ -419,6 +566,24 @@ function drawGems(r, hr, gems, time) {
     ctx.fill();
     ctx.globalAlpha = 1;
   }
+}
+
+// The crash shockwave: a ring that spreads out and fades.
+function drawShock(r, hr) {
+  const { ctx } = r;
+  const t = hr.shockAge / SHOCK_SEC;
+  const rad = (0.5 + 5.5 * (1 - (1 - t) * (1 - t))) * hr.scale;
+  const x = sx(hr, hr.shockX), y = sy(hr, hr.shockY);
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 0.75 * (1 - t);
+  ctx.lineWidth = Math.max(1.5, (1 - t) * 0.25 * hr.scale);
+  ctx.beginPath();
+  ctx.arc(x, y, rad, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = 0.28 * (1 - t);
+  ctx.lineWidth = Math.max(3, (1 - t) * 0.7 * hr.scale);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function drawSmoke(r, hr) {
@@ -444,7 +609,9 @@ function drawParts(r, hr) {
   }
   ctx.globalAlpha = 1;
   if (hr.pops.length) {
-    ctx.font = `800 ${Math.round(Math.max(16, hr.scale * 0.9))}px system-ui, sans-serif`;
+    const px = Math.round(Math.max(16, hr.scale * 0.9));
+    if (px !== hr.popPx) { hr.popPx = px; hr.popFont = `800 ${px}px system-ui, sans-serif`; }
+    ctx.font = hr.popFont;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const p of hr.pops) {

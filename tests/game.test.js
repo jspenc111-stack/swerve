@@ -176,3 +176,78 @@ test('Classic runs 2% faster; 3D Flight and 3D Heli speeds are unchanged', () =>
   assert.equal(CONFIG.baseSpeed, 24, 'the shared baseSpeed is unchanged');
   assert.equal(CONFIG.speedPerLevel, 2.75, 'the shared speedPerLevel is unchanged');
 });
+
+// ---- v1.6: quicker turn-arounds (classicReverseBoost) and the eased lean ----
+
+function quietGame() {
+  // A level with no cubes, so only the steering is being tested.
+  const levels = [{ name: 'Empty', pattern: { type: 'scatter', density: 0 }, palette: LEVELS[0].palette }];
+  return createGame(CONFIG, levels, 5);
+}
+
+test('Classic: classicReverseBoost and shipLeanEase are set', () => {
+  assert.equal(CONFIG.classicReverseBoost, 1.8);
+  assert.equal(CONFIG.shipLeanEase, 12);
+});
+
+test('Classic: steering against the slide uses the boosted rate', () => {
+  const g = quietGame();
+  const dt = 1 / 120;
+  g.vx = CONFIG.maxSteerSpeed;
+  stepGame(g, dt, -1);
+  const drop = CONFIG.maxSteerSpeed - g.vx;
+  assert.ok(Math.abs(drop - CONFIG.steerAccel * CONFIG.classicReverseBoost * dt) < 1e-9, `dropped ${drop}`);
+});
+
+test('Classic: speeding up from rest, top speed and friction are unchanged', () => {
+  const g = quietGame();
+  const dt = 1 / 120;
+  stepGame(g, dt, 1);
+  assert.ok(Math.abs(g.vx - CONFIG.steerAccel * dt) < 1e-9, 'from rest: the normal rate');
+  stepGame(g, dt, 1);
+  assert.ok(Math.abs(g.vx - 2 * CONFIG.steerAccel * dt) < 1e-9, 'same way: the normal rate');
+  for (let i = 0; i < 240; i++) stepGame(g, dt, 1);
+  assert.ok(Math.abs(g.vx - CONFIG.maxSteerSpeed) < 1e-9, 'top speed unchanged');
+  stepGame(g, dt, 0);
+  assert.ok(Math.abs(g.vx - CONFIG.maxSteerSpeed * Math.exp(-CONFIG.steerFriction * dt)) < 1e-9, 'friction unchanged');
+});
+
+test('Classic: full left to full right is much quicker than before', () => {
+  const g = quietGame();
+  const dt = 1 / 1000;
+  g.vx = -CONFIG.maxSteerSpeed;
+  let stopped = null;
+  let fast = null;
+  for (let t = dt; t < 1 && fast === null; t += dt) {
+    stepGame(g, dt, 1);
+    if (stopped === null && g.vx >= 0) stopped = t;
+    if (g.vx >= 0.9 * CONFIG.maxSteerSpeed) fast = t;
+  }
+  assert.ok(Math.abs(stopped - 0.112) < 0.004, `stops sliding the old way in ${(stopped * 1000).toFixed(0)} ms (target 112)`);
+  assert.ok(Math.abs(fast - 0.292) < 0.004, `reaches 90% the new way in ${(fast * 1000).toFixed(0)} ms (target 292)`);
+});
+
+test("Classic: the ship's lean eases toward its speed (look only)", () => {
+  const g = quietGame();
+  const dt = 1 / 60;
+  g.vx = CONFIG.maxSteerSpeed;
+  stepGame(g, dt, 1);
+  assert.ok(g.leanLook > 0 && g.leanLook < 0.5, `one frame in, the lean has only started (${g.leanLook})`);
+  for (let i = 0; i < 60; i++) stepGame(g, dt, 1);
+  assert.ok(Math.abs(g.leanLook - 1) < 0.01, 'and settles at full lean');
+  // A snap reversal doesn't snap the lean.
+  g.vx = -CONFIG.maxSteerSpeed;
+  stepGame(g, dt, -1);
+  assert.ok(g.leanLook > 0.5, 'the lean follows smoothly');
+  // Look only: the same inputs give the same flight with or without easing.
+  const a = quietGame();
+  const b = createGame({ ...CONFIG, shipLeanEase: 3 }, a.levels, 5);
+  for (let i = 0; i < 200; i++) {
+    const steer = i % 50 < 25 ? 1 : -1;
+    stepGame(a, dt, steer);
+    stepGame(b, dt, steer);
+  }
+  assert.equal(a.x, b.x);
+  assert.equal(a.vx, b.vx);
+  assert.equal(a.distance, b.distance);
+});

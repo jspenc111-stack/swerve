@@ -11,6 +11,7 @@
 // body. None of this changes the hitbox (that's in chopper.js).
 
 import { mixColor } from './levels.js';
+import { glowSprite, drawGlow } from './sprites.js';
 
 const DEG = Math.PI / 180;
 const SHADE_STEPS = 20;
@@ -138,10 +139,11 @@ export function drawHelipad(r, cam, padZ) {
   circle(PAD_R * 0.86, '#f4d35e', false);
   // The "H": two uprights and a crossbar, as flat quads on the ground.
   const bar = (x0, z0, x1, z1) => {
-    const pts = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
     ctx.beginPath();
     for (let i = 0; i < 4; i++) {
-      proj(r, cam, pts[i][0], 0.02, Math.max(padZ + pts[i][1], cam.z + NEAR), HP[i]);
+      const bx = i === 0 || i === 3 ? x0 : x1;
+      const bz = i < 2 ? z0 : z1;
+      proj(r, cam, bx, 0.02, Math.max(padZ + bz, cam.z + NEAR), HP[i]);
       if (i === 0) ctx.moveTo(HP[i].x, HP[i].y); else ctx.lineTo(HP[i].x, HP[i].y);
     }
     ctx.closePath();
@@ -259,6 +261,7 @@ const T = V.map(() => ({ x: 0, y: 0, z: 0, sx: 0, sy: 0 }));
 const LIGHT = (() => { const l = Math.hypot(-0.4, 1, -0.3); return [-0.4 / l, 1 / l, -0.3 / l]; })();
 const order = POLYS.map((_, i) => i);
 const dist = new Float64Array(POLYS.length);
+const byDist = (a2, b2) => dist[b2] - dist[a2];
 
 function materials(s, ship) {
   if (s.chopperKey === ship && s.chopperMats) return s.chopperMats;
@@ -302,6 +305,7 @@ function makeRot(cfg, look) {
   };
 }
 
+let lightRed = null, lightGreen = null, lightWhite = null;
 const Q = {};
 const A = {}, B = {}, C = {}, D = {};
 const W1 = {}, W2 = {};
@@ -319,7 +323,7 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
   ctx.lineCap = 'round';
   const kBody = r.f / (pz - cam.z);
   ctx.strokeStyle = '#3a3f47';
-  for (const side of [-1, 1]) {
+  for (let side = -1; side <= 1; side += 2) {
     const x = 0.33 * side;
     ctx.lineWidth = Math.max(1.5, 0.06 * kBody);
     ctx.beginPath();
@@ -329,7 +333,8 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
     ctx.stroke();
     ctx.lineWidth = Math.max(1, 0.04 * kBody);
     ctx.beginPath();
-    for (const z of [0.3, -0.22]) {
+    for (let q = 0; q < 2; q++) {
+      const z = q === 0 ? 0.3 : -0.22;
       toScreen(0.2 * side, -0.3, z, A); toScreen(x, -0.58, z, B);
       ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
     }
@@ -347,12 +352,12 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
   for (let i = 0; i < POLYS.length; i++) {
     const idx = POLYS[i].idx;
     let mx = 0, my = 0, mz = 0;
-    for (const n of idx) { mx += T[n].x; my += T[n].y; mz += T[n].z; }
+    for (let q = 0; q < idx.length; q++) { const n = idx[q]; mx += T[n].x; my += T[n].y; mz += T[n].z; }
     mx /= idx.length; my /= idx.length; mz /= idx.length;
     dist[i] = (mx - ex) ** 2 + (my - ey) ** 2 + (mz - ez) ** 2;
     order[i] = i;
   }
-  order.sort((a2, b2) => dist[b2] - dist[a2]);
+  order.sort(byDist);
   ctx.lineJoin = 'round';
   for (let n = 0; n < order.length; n++) {
     const pl = POLYS[order[n]];
@@ -451,17 +456,20 @@ export function drawChopperModel(r, s, cam, c, look, palette) {
   // Lights: red on the left, green on the right, white strobe on the tail.
   const strobe = (look.clock * 1000) % 1400 < 70;
   ctx.globalCompositeOperation = 'lighter';
-  const glow = (lx, ly, lz, col, rr) => {
-    toScreen(lx, ly, lz, A);
-    const g = ctx.createRadialGradient(A.x, A.y, 0, A.x, A.y, rr);
-    g.addColorStop(0, `rgba(${col},1)`);
-    g.addColorStop(1, `rgba(${col},0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(A.x, A.y, rr, 0, Math.PI * 2); ctx.fill();
-  };
-  glow(-0.36, -0.05, 0.05, '255,60,60', 5);
-  glow(0.36, -0.05, 0.05, '60,255,110', 5);
-  if (strobe) glow(0, 0.53, -1.22, '255,255,255', 10);
+  // (Cached glow pictures: no gradients are built per frame.)
+  if (!lightRed) {
+    lightRed = glowSprite('rgba(255,60,60,1)', 'rgba(255,60,60,0.6)', 0.4);
+    lightGreen = glowSprite('rgba(60,255,110,1)', 'rgba(60,255,110,0.6)', 0.4);
+    lightWhite = glowSprite('rgba(255,255,255,1)', 'rgba(255,255,255,0.6)', 0.4);
+  }
+  toScreen(-0.36, -0.05, 0.05, A);
+  drawGlow(ctx, lightRed, A.x, A.y, 5);
+  toScreen(0.36, -0.05, 0.05, A);
+  drawGlow(ctx, lightGreen, A.x, A.y, 5);
+  if (strobe) {
+    toScreen(0, 0.53, -1.22, A);
+    drawGlow(ctx, lightWhite, A.x, A.y, 10);
+  }
   ctx.globalCompositeOperation = 'source-over';
   ctx.lineCap = 'butt';
 }

@@ -7,6 +7,15 @@
 
 import { mixColor } from './levels.js';
 import { drawChopperModel, drawHelipad, drawDownwash } from './chopperModel.js';
+import { glowSprite, drawGlow, drawGlowOval } from './sprites.js';
+import { drawSky, drawRain, sceneOf, sceneLight, fillSkySurround } from './scenery.js';
+import {
+  drawSpeedStreaks, drawWaterGlints, drawRainSplashes, drawNeonGrid, drawGroundShadow,
+} from './groundFx.js';
+import { luminance, cubeVariant } from './render.js';
+import {
+  drawParticles, drawTrailRibbon, drawTrailLine, drawShockwave, drawSpeedLines, drawLevelRing,
+} from './fx.js';
 
 const FOG_STEPS = 24;
 const SHADE_STEPS = 24;
@@ -16,7 +25,8 @@ export function createFlightRenderer() {
   return {
     items: [],
     paletteKey: '',
-    shades: { front: [], top: [], bottom: [], side: [], edge: [] },
+    // Three brightness sets (a touch darker, normal, a touch lighter), like Classic.
+    shadeSets: [0, 1, 2].map(() => ({ front: [], frontHi: [], frontLo: [], top: [], bottom: [], side: [], edge: [], rim: [] })),
     gradKey: '',
     skyGrad: null,
     groundGrad: null,
@@ -25,22 +35,60 @@ export function createFlightRenderer() {
   };
 }
 
+const VARIANTS = [-0.06, 0, 0.06];
 function updateShades(s, p) {
-  const key = p.cube + p.skyHorizon;
+  const key = p.cube + p.skyHorizon + p.ground;
   if (key === s.paletteKey) return;
   s.paletteKey = key;
-  const top = mixColor(p.cube, '#ffffff', 0.28);
-  const bottom = mixColor(p.cube, '#000000', 0.42);
-  const side = mixColor(p.cube, '#000000', 0.25);
-  const edge = mixColor(p.cube, '#ffffff', 0.65);
-  for (let i = 0; i < FOG_STEPS; i++) {
-    const t = i / (FOG_STEPS - 1);
-    s.shades.front[i] = mixColor(p.cube, p.skyHorizon, t);
-    s.shades.top[i] = mixColor(top, p.skyHorizon, t);
-    s.shades.bottom[i] = mixColor(bottom, p.skyHorizon, t);
-    s.shades.side[i] = mixColor(side, p.skyHorizon, t);
-    s.shades.edge[i] = mixColor(edge, p.skyHorizon, t);
+  for (let v = 0; v < VARIANTS.length; v++) {
+    const d = VARIANTS[v];
+    const base = d < 0 ? mixColor(p.cube, '#000000', -d) : mixColor(p.cube, '#ffffff', d);
+    const top = mixColor(base, '#ffffff', 0.28);
+    const bottom = mixColor(base, '#000000', 0.42);
+    const side = mixColor(base, '#000000', 0.25);
+    const edge = mixColor(base, '#ffffff', 0.65);
+    const hi = mixColor(base, '#ffffff', 0.1);
+    const lo = mixColor(base, '#000000', 0.09);
+    const set = s.shadeSets[v];
+    for (let i = 0; i < FOG_STEPS; i++) {
+      const t = i / (FOG_STEPS - 1);
+      set.front[i] = mixColor(base, p.skyHorizon, t);
+      set.frontHi[i] = mixColor(hi, p.skyHorizon, t);
+      set.frontLo[i] = mixColor(lo, p.skyHorizon, t);
+      set.top[i] = mixColor(top, p.skyHorizon, t);
+      set.bottom[i] = mixColor(bottom, p.skyHorizon, t);
+      set.side[i] = mixColor(side, p.skyHorizon, t);
+      set.edge[i] = mixColor(edge, p.skyHorizon, t);
+      set.rim[i] = mixColor(mixColor(hi, edge, 0.7), p.skyHorizon, t); // the top-edge highlight
+    }
   }
+  const dark = luminance(p.ground) < 0.45;
+  s.streakColor = dark ? mixColor(p.ground, '#ffffff', 0.45) : mixColor(p.ground, '#000000', 0.22);
+  s.neonGlow = mixColor(p.cube, '#ffffff', 0.35);
+  s.cubeGlowSprite = glowSprite(mixColor(p.cube, '#ffffff', 0.2), p.cube, 0.5);
+}
+
+const GEO = { ctx: null, cx: 0, hY: 0, f: 1, camX: 0, camZ: 0, camH: 1, w: 1, h: 1, far: 1 };
+const SKY = { w: 1, h: 1, horizonY: 0, skySpan: 1, dpr: 1 };
+function geometry(r, cam) {
+  const g = GEO;
+  g.ctx = r.ctx; g.cx = r.cx; g.hY = cam.hY; g.f = r.f;
+  g.camX = cam.x; g.camZ = cam.z; g.camH = Math.max(0.5, cam.y); g.w = r.w; g.h = r.h; g.far = r.config.fogDistance;
+  return g;
+}
+
+// The ground and its effects, shared by 3D Flight and 3D Heli.
+function drawGroundLayer(r, s, p, cam, view, scene, speed, boost) {
+  const g = geometry(r, cam);
+  const time = view.time || 0;
+  if (scene.ground === 'neon') drawNeonGrid(g, p.grid || s.neonGlow, s.neonGlow, time, view.glow ?? 1);
+  else if (p.grid) drawGrid(r, p, cam);
+  if (!view.lite) {
+    drawSpeedStreaks(g, speed, boost, s.streakColor);
+    if (scene.ground === 'water') drawWaterGlints(g, time);
+    if (scene.ground === 'wet') drawRainSplashes(g, time);
+  }
+  return g;
 }
 
 // view: palette, bank, roll, shakeX, shakeY, flash, glow, camY, joystick, hitboxes
@@ -48,25 +96,33 @@ export function drawFlightFrame(r, s, f, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
   updateShades(s, p);
-  const cam = {
-    x: f.x,
-    y: view.camY,
-    z: f.distance - cfg.flightCameraBack,
-    hY: h * cfg.flightHorizonRatio,
-  };
+  const cam = CAM; // one camera object, reused every frame
+  cam.x = f.x;
+  cam.y = view.camY;
+  cam.z = f.distance - cfg.flightCameraBack;
+  cam.hY = h * cfg.flightHorizonRatio;
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
   const angle = (view.bank || 0) + (view.roll || 0);
   const pivotY = h * 0.6;
+  // The boost zoom (look only): the whole picture shrinks a touch, world and jet alike.
+  const zoom = view.zoom || 1;
   ctx.translate(r.cx, pivotY);
   ctx.rotate(angle);
+  if (zoom !== 1) ctx.scale(zoom, zoom);
   ctx.translate(-r.cx, -pivotY);
 
-  drawSkyAndGround(r, s, p, cam);
-  if (p.grid) drawGrid(r, p, cam);
-  drawShadow(r, f, cam);
-  drawWorld(r, s, f, cam, view.glow || 0);
+  const scene = sceneOf(view.level);
+  const time = view.time || 0;
+  const ps = view.particles;
+  drawSkyAndGround(r, s, p, cam, view, scene);
+  const g = drawGroundLayer(r, s, p, cam, view, scene, f.speed || 0, f.boost || 0);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, cam.hY, w, time - view.ringAt);
+  if (ps) drawParticles(g, ps, true);
+  if (view.showShip !== false) drawShadow(r, f, cam);
+  drawWorld(r, s, f, cam, view.glow || 0, scene, g);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.hitboxes) drawHitbox(r, f, cam);
   drawBullets(r, f, cam);
   drawFx(r, f, cam, false);
@@ -74,7 +130,15 @@ export function drawFlightFrame(r, s, f, view) {
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
-  if (view.showShip !== false) drawJet(r, s, p, f, cam);
+  if (view.level) drawRain(ctx, r.scenery, view, w, h);
+  if (!view.lite) drawSpeedLines(ctx, w, h, r.cx, cam.hY, f.boost || 0, time);
+  if (zoom !== 1) {
+    ctx.translate(r.cx, pivotY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-r.cx, -pivotY);
+  }
+  if (view.showShip !== false) drawJet(r, s, p, f, cam, view.trail);
+  if (ps) drawParticles(g, ps, false);
   drawFx(r, f, cam, true); // floating "+50" text on top
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
@@ -87,6 +151,8 @@ export function drawFlightFrame(r, s, f, view) {
   }
 }
 
+const CAM = { x: 0, y: 0, z: 0, hY: 0 };
+
 function proj(r, cam, x, y, z, out) {
   const k = r.f / (z - cam.z);
   out.x = r.cx + (x - cam.x) * k;
@@ -94,22 +160,34 @@ function proj(r, cam, x, y, z, out) {
   return out;
 }
 
-function drawSkyAndGround(r, s, p, cam) {
+function drawSkyAndGround(r, s, p, cam, view, scene) {
   const { ctx, w, h } = r;
   const hY = cam.hY;
-  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h;
+  const hazy = scene.haze ? scene.haze.strength : 0;
+  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h + hazy;
   if (key !== s.gradKey) {
     s.gradKey = key;
     s.skyGrad = ctx.createLinearGradient(0, hY - h * 0.65, 0, hY);
     s.skyGrad.addColorStop(0, p.sky);
     s.skyGrad.addColorStop(1, p.skyHorizon);
+    // Horizon glow: the ground blends into the haze colour at the horizon.
     s.groundGrad = ctx.createLinearGradient(0, hY, 0, h);
-    s.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.6));
-    s.groundGrad.addColorStop(0.3, p.ground);
+    s.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.6 + 0.25 * hazy));
+    s.groundGrad.addColorStop(0.3 + 0.1 * hazy, p.ground);
     s.groundGrad.addColorStop(1, p.ground);
   }
-  ctx.fillStyle = s.skyGrad;
-  ctx.fillRect(-w, hY - h * 2, w * 3, h * 2 + 1);
+  // Behind the sky picture: plain sky colour (only seen in the far corners
+  // when the view tilts). Without a level, the old plain gradient.
+  if (view.level) fillSkySurround(ctx, p.sky, w, h, hY);
+  else {
+    ctx.fillStyle = s.skyGrad;
+    ctx.fillRect(-w, hY - h * 2, w * 3, h * 2 + 1);
+  }
+  // The level's sky scene (painted once, stamped here every frame).
+  if (view.level) {
+    SKY.w = w; SKY.h = h; SKY.horizonY = hY; SKY.skySpan = h * 0.65; SKY.dpr = r.dpr;
+    drawSky(ctx, r.scenery, view, SKY);
+  }
   ctx.fillStyle = s.groundGrad;
   ctx.fillRect(-w, hY, w * 3, h * 2);
 }
@@ -151,14 +229,16 @@ function drawShadow(r, f, cam, span = r.config.flightShipSpan) {
   const height = f.y;
   const rx = (span / 2) * k * (1 - Math.min(0.5, height / 30));
   const ctx = r.ctx;
-  ctx.fillStyle = `rgba(0,0,0,${(0.22 * (1 - Math.min(0.75, height / 12))).toFixed(3)})`;
+  ctx.fillStyle = '#000000';
+  ctx.globalAlpha = 0.22 * (1 - Math.min(0.75, height / 12));
   ctx.beginPath();
   ctx.ellipse(S.x, S.y, rx, rx * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 // Boxes and rings, sorted far → near (painter's algorithm).
-function drawWorld(r, s, f, cam, glow) {
+function drawWorld(r, s, f, cam, glow, scene, g) {
   const { ctx, w } = r;
   const cfg = r.config;
   const items = s.items;
@@ -189,10 +269,40 @@ function drawWorld(r, s, f, cam, glow) {
   items.sort(byFarFirst);
   const fogStart = cfg.fogStart;
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
+  // Depth cues: a soft shadow on the ground straight under every block,
+  // pillar, frame piece and drone (leaning slightly away from the light), so
+  // you can judge how high things are. They fade with the fog. On glow
+  // levels (Night) the ground is too dark for shadows, so each one is a soft
+  // pool of light instead. Drawn first: everything else is above the ground.
+  const lean = -sceneLight(scene) * 0.35;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.taken !== undefined) continue; // rings cast no shadow
+    const drone = it.hp !== undefined;
+    const halfW = drone ? it.size * 0.5 : it.w / 2;
+    const halfD = drone ? it.size * 0.5 : it.d / 2;
+    const zn = it.z - halfD - cam.z;
+    if (zn <= NEAR) continue;
+    let fog = (zn - fogStart) / fogRange;
+    fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
+    const height = drone ? it.y - it.size / 2 : it.y;
+    const fade = (1 - fog) / (1 + Math.max(0, height) * 0.06);
+    if (glow > 0.5) {
+      const k = r.f / (it.z - cam.z);
+      const kn = r.f / zn, kf = r.f / (zn + halfD * 2);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.32 * glow * fade;
+      drawGlowOval(ctx, s.cubeGlowSprite, r.cx + (it.x - cam.x) * k, cam.hY + g.camH * k, halfW * 2.2 * k, Math.max(2, g.camH * (kn - kf) * 1.1));
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    } else {
+      drawGroundShadow(g, it.x + lean * halfW, it.z, halfW, halfD, 0.3 * fade * (1 - glow));
+    }
+  }
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.hp !== undefined) drawDrone(r, it, cam, f.time, fogStart, fogRange);
-    else if (it.taken !== undefined) drawRing(r, it, cam, fogStart, fogRange);
+    else if (it.taken !== undefined) drawRing(r, it, cam, fogStart, fogRange, f.time);
     else drawBox(r, s, it, cam, glow, fogStart, fogRange);
   }
   ctx.globalAlpha = 1;
@@ -204,7 +314,7 @@ function byFarFirst(a, b) {
 
 function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
   const { ctx, f, cx } = r;
-  const sh = s.shades;
+  const sh = s.shadeSets[cubeVariant(b.x, b.z)];
   const zn = Math.max(b.z - b.d / 2 - cam.z, NEAR);
   const zf = b.z + b.d / 2 - cam.z;
   const xl = b.x - b.w / 2 - cam.x;
@@ -244,8 +354,24 @@ function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
     ctx.moveTo(x1, yBot); ctx.lineTo(x2, yBot); ctx.lineTo(bx2, byBot); ctx.lineTo(bx1, byBot);
     ctx.fill();
   }
-  ctx.fillStyle = sh.front[fi];
-  ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+  // The front gets a gentle top-to-bottom gradient (three flat bands, lighter
+  // at the top, each painted once) and a thin bright highlight along its top
+  // edge, like Classic.
+  if (x2 - x1 < 14) {
+    ctx.fillStyle = sh.front[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+  } else {
+    const fh = yBot - yTop;
+    const yA = yTop + fh * 0.36, yB = yBot - fh * 0.28;
+    ctx.fillStyle = sh.frontHi[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, yA - yTop);
+    ctx.fillStyle = sh.front[fi];
+    ctx.fillRect(x1, yA, x2 - x1, yB - yA);
+    ctx.fillStyle = sh.frontLo[fi];
+    ctx.fillRect(x1, yB, x2 - x1, yBot - yB);
+    ctx.fillStyle = sh.rim[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, Math.max(1, 0.035 * kn));
+  }
   if (glow > 0) {
     ctx.globalAlpha = glow * (1 - fog) * 0.9;
     ctx.strokeStyle = sh.edge[fi];
@@ -257,7 +383,7 @@ function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
 
 // Bonus ring: a glowing square frame.
 const RA = {}, RB = {};
-function drawRing(r, g, cam, fogStart, fogRange) {
+function drawRing(r, g, cam, fogStart, fogRange, time = 0) {
   const ctx = r.ctx;
   const half = g.size / 2;
   proj(r, cam, g.x - half, g.y + half, g.z, RA);
@@ -265,9 +391,11 @@ function drawRing(r, g, cam, fogStart, fogRange) {
   const k = r.f / (g.z - cam.z);
   let fog = (g.z - cam.z - fogStart) / fogRange;
   fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
-  ctx.globalAlpha = 1 - fog * 0.85;
+  // A slow shimmer: the ring's glow gently swells and fades.
+  const shimmer = 0.5 + 0.5 * Math.sin(time * 2.2 + g.z * 0.37);
+  ctx.globalAlpha = (1 - fog * 0.85) * (0.8 + 0.2 * shimmer);
   ctx.strokeStyle = 'rgba(255, 196, 64, 0.45)';
-  ctx.lineWidth = Math.max(2, 0.35 * k);
+  ctx.lineWidth = Math.max(2, (0.3 + 0.14 * shimmer) * k);
   ctx.strokeRect(RA.x, RA.y, RB.x - RA.x, RB.y - RA.y);
   ctx.strokeStyle = '#fff3c4';
   ctx.lineWidth = Math.max(1, 0.1 * k);
@@ -279,6 +407,25 @@ function drawRing(r, g, cam, fogStart, fogRange) {
 
 // A drone: a spinning faceted crystal with a glowing core. Small ones are
 // pink-red; big armored ones are orange with a spinning ring and health pips.
+// Unit octahedron: top, bottom, then four around the middle.
+const DRONE_PTS = [[0, 1.25, 0], [0, -1.25, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1]];
+// Face colours for each brightness step, worked out once: small (pink-red),
+// big (orange) and the white hit-flash.
+const DRONE_STEPS = 16;
+const droneShades = (r0, g0, b0) => {
+  const out = [];
+  for (let i = 0; i < DRONE_STEPS; i++) {
+    const lit = 0.35 + 0.65 * (i / (DRONE_STEPS - 1));
+    out.push(`rgb(${(r0 * lit) | 0},${(g0 * lit) | 0},${(b0 * lit) | 0})`);
+  }
+  return out;
+};
+const DRONE_SMALL = droneShades(255, 70, 110);
+const DRONE_BIG = droneShades(255, 150, 40);
+const DRONE_FLASH = droneShades(255, 255, 255);
+const DC = { x: 0, y: 0 };
+let droneGlowSmall = null;
+let droneGlowBig = null;
 const DRONE_FACES = [[0, 2, 3], [0, 3, 4], [0, 4, 5], [0, 5, 2], [1, 3, 2], [1, 4, 3], [1, 5, 4], [1, 2, 5]];
 const DV = [{}, {}, {}, {}, {}, {}];
 const DS = [{}, {}, {}, {}, {}, {}];
@@ -288,10 +435,9 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   const h = t.size / 2;
   const spin = time * (t.big ? 1.6 : 2.6) + t.phase;
   const c = Math.cos(spin), sn = Math.sin(spin);
-  // Octahedron: top, bottom, then four around the middle.
-  const pts = [[0, h * 1.25, 0], [0, -h * 1.25, 0], [h, 0, 0], [0, 0, h], [-h, 0, 0], [0, 0, -h]];
   for (let i = 0; i < 6; i++) {
-    const [x, y, z] = pts[i];
+    const m = DRONE_PTS[i];
+    const x = m[0] * h, y = m[1] * h, z = m[2] * h;
     DV[i].x = t.x + x * c - z * sn;
     DV[i].y = t.y + y;
     DV[i].z = t.z + x * sn + z * c;
@@ -300,8 +446,10 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   let fog = (t.z - cam.z - fogStart) / fogRange;
   fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
   ctx.globalAlpha = 1 - fog * 0.8;
-  const base = t.flash > 0 ? [255, 255, 255] : t.big ? [255, 150, 40] : [255, 70, 110];
-  for (const [a, b, d] of DRONE_FACES) {
+  const shades = t.flash > 0 ? DRONE_FLASH : t.big ? DRONE_BIG : DRONE_SMALL;
+  for (let n = 0; n < DRONE_FACES.length; n++) {
+    const face = DRONE_FACES[n];
+    const a = face[0], b = face[1], d = face[2];
     const A = DV[a], B = DV[b], D = DV[d];
     const ux = B.x - A.x, uy = B.y - A.y, uz = B.z - A.z;
     const wx = D.x - A.x, wy = D.y - A.y, wz = D.z - A.z;
@@ -309,15 +457,15 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
     // Only faces turned toward the camera (it's a closed shape).
     if (nx * (cam.x - A.x) + ny * (cam.y - A.y) + nz * (cam.z - A.z) <= 0) continue;
     const nl = Math.hypot(nx, ny, nz) || 1;
-    const lit = 0.35 + 0.65 * Math.max(0, (nx * LIGHT2[0] + ny * LIGHT2[1] + nz * LIGHT2[2]) / nl);
-    ctx.fillStyle = `rgb(${(base[0] * lit) | 0},${(base[1] * lit) | 0},${(base[2] * lit) | 0})`;
+    const lit = Math.max(0, (nx * LIGHT2[0] + ny * LIGHT2[1] + nz * LIGHT2[2]) / nl);
+    ctx.fillStyle = shades[Math.round(lit * (DRONE_STEPS - 1))];
     ctx.beginPath();
     ctx.moveTo(DS[a].x, DS[a].y); ctx.lineTo(DS[b].x, DS[b].y); ctx.lineTo(DS[d].x, DS[d].y);
     ctx.closePath();
     ctx.fill();
   }
   const k = r.f / (t.z - cam.z);
-  const centre = proj(r, cam, t.x, t.y, t.z, {});
+  const centre = proj(r, cam, t.x, t.y, t.z, DC);
   // A pulsing outline so drones stand out even far away (never smaller than ~9px).
   const ringR = Math.max(9, h * 1.5 * k) * (1 + 0.12 * Math.sin(time * 6 + t.phase));
   ctx.lineWidth = 2;
@@ -334,14 +482,14 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   // Glowing core.
   ctx.globalCompositeOperation = 'lighter';
   const glowR = h * 1.4 * k;
-  const g = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, glowR);
-  g.addColorStop(0, `rgba(255,255,255,${(0.7 * (1 - fog)).toFixed(2)})`);
-  g.addColorStop(0.4, t.big ? 'rgba(255,170,60,0.35)' : 'rgba(255,80,130,0.35)');
-  g.addColorStop(1, 'rgba(255,80,130,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(centre.x, centre.y, glowR, 0, Math.PI * 2);
-  ctx.fill();
+  if (!droneGlowSmall) {
+    droneGlowSmall = glowSprite('rgba(255,255,255,0.7)', 'rgba(255,80,130,0.35)', 0.4);
+    droneGlowBig = glowSprite('rgba(255,255,255,0.7)', 'rgba(255,170,60,0.35)', 0.4);
+  }
+  const before = ctx.globalAlpha;
+  ctx.globalAlpha = 1 - fog * 0.6;
+  drawGlow(ctx, t.big ? droneGlowBig : droneGlowSmall, centre.x, centre.y, glowR);
+  ctx.globalAlpha = before;
   ctx.globalCompositeOperation = 'source-over';
   if (t.big) {
     // Spinning armor ring and health pips.
@@ -416,6 +564,7 @@ function drawFx(r, f, cam, textPass) {
   ctx.globalCompositeOperation = 'source-over';
 }
 
+const RETICLE_TICKS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // Aiming reticle straight ahead; it turns gold and tightens when a drone is locked on.
 function drawReticle(r, f, cam) {
   const cfg = r.config;
@@ -434,7 +583,8 @@ function drawReticle(r, f, cam) {
   const R = locked ? 11 : 14;
   ctx.beginPath();
   ctx.arc(FP.x, FP.y, R, 0, Math.PI * 2);
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  for (let i = 0; i < 4; i++) {
+    const dx = RETICLE_TICKS[i][0], dy = RETICLE_TICKS[i][1];
     ctx.moveTo(FP.x + dx * (R + 3), FP.y + dy * (R + 3));
     ctx.lineTo(FP.x + dx * (R + 9), FP.y + dy * (R + 9));
   }
@@ -492,12 +642,11 @@ export function drawChopperFrame(r, s, c, look, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
   updateShades(s, p);
-  const cam = {
-    x: c.x,
-    y: view.camY,
-    z: c.distance - cfg.chopperCameraBack,
-    hY: h * cfg.flightHorizonRatio,
-  };
+  const cam = CAM;
+  cam.x = c.x;
+  cam.y = view.camY;
+  cam.z = c.distance - cfg.chopperCameraBack;
+  cam.hY = h * cfg.flightHorizonRatio;
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
@@ -507,15 +656,28 @@ export function drawChopperFrame(r, s, c, look, view) {
   ctx.rotate(angle);
   ctx.translate(-r.cx, -pivotY);
 
-  drawSkyAndGround(r, s, p, cam);
-  if (p.grid) drawGrid(r, p, cam);
+  const scene = sceneOf(view.level);
+  const time = view.time || 0;
+  const ps = view.particles;
+  drawSkyAndGround(r, s, p, cam, view, scene);
+  const g = drawGroundLayer(r, s, p, cam, view, scene, c.speed || 0, 0);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, cam.hY, w, time - view.ringAt);
   drawHelipad(r, cam, c.padZ);
-  drawDownwash(r, cam, c, look);
-  drawShadow(r, c, cam, cfg.chopperLength * 0.7);
-  drawWorld(r, s, c, cam, view.glow || 0);
+  if (ps) drawParticles(g, ps, true);
+  if (view.showShip !== false) {
+    drawDownwash(r, cam, c, look);
+    drawShadow(r, c, cam, cfg.chopperLength * 0.7);
+  }
+  drawWorld(r, s, c, cam, view.glow || 0, scene, g);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.path) drawPath(r, c, cam);
   if (view.hitboxes) { drawHitbox(r, c, cam, c.hitbox); drawHitbox(r, c, cam, c.rotorBox); }
   if (view.showShip !== false) drawChopperModel(r, s, cam, c, look, p);
+  if (ps) drawParticles(g, ps, false);
+  if (view.level) {
+    ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
+    drawRain(ctx, r.scenery, view, w, h);
+  }
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   const ctl = view.controls;
@@ -631,7 +793,27 @@ function jetMaterials(s, ship) {
 }
 
 const Q = {};
-function drawJet(r, s, p, f, cam) {
+const E0 = {}, E1 = {}, EA = {}, EB = {};
+const byDist = (a2, b2) => dist[b2] - dist[a2];
+// The jet's turn/tilt for this frame, worked out once and used by rotJet.
+const JR = { sx: 1, sz: 1, cr: 1, sr: 0, cp: 1, sp: 0, cy: 1, sy: 0 };
+function rotJet(x, y, z, o) {
+  x *= JR.sx; z *= JR.sz;
+  const x1 = x * JR.cr + y * JR.sr, y1 = -x * JR.sr + y * JR.cr;         // roll
+  const y2 = y1 * JR.cp + z * JR.sp, z2 = -y1 * JR.sp + z * JR.cp;       // pitch
+  o.x = x1 * JR.cy + z2 * JR.sy; o.y = y2; o.z = -x1 * JR.sy + z2 * JR.cy; // yaw
+  return o;
+}
+let burnerWarm = null, burnerCool = null, navRed = null, navGreen = null, navWhite = null;
+function jetSprites() {
+  if (burnerWarm) return;
+  burnerWarm = glowSprite('rgba(255,255,255,0.95)', 'rgba(255,170,70,0.7)', 0.35);
+  burnerCool = glowSprite('rgba(255,255,255,0.95)', 'rgba(140,200,255,0.7)', 0.35);
+  navRed = glowSprite('rgba(255,60,60,1)', 'rgba(255,60,60,0.6)', 0.4);
+  navGreen = glowSprite('rgba(60,255,110,1)', 'rgba(60,255,110,0.6)', 0.4);
+  navWhite = glowSprite('rgba(255,255,255,1)', 'rgba(255,255,255,0.6)', 0.4);
+}
+function drawJet(r, s, p, f, cam, trail) {
   const { ctx, config: cfg } = r;
   const mats = jetMaterials(s, p.ship);
   const DEG = Math.PI / 180;
@@ -640,18 +822,14 @@ function drawJet(r, s, p, f, cam) {
   const roll = (f.bankLook ?? (f.vx / cfg.flightMaxSteerSpeed) * cfg.flightRollDeg) * DEG;
   const pitch = (f.pitchLook ?? (f.vy / cfg.flightMaxClimbSpeed) * cfg.flightPitchDeg) * DEG;
   const yaw = 0.15 * Math.atan2(f.vx, Math.max(1, f.speed));
-  const cr = Math.cos(roll), sr = Math.sin(roll);
-  const cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const sx = cfg.flightShipSpan / 1.2;
-  const sz = cfg.flightShipLength / 1.68;
-  const rot = (x, y, z, o) => {
-    x *= sx; z *= sz;
-    const x1 = x * cr + y * sr, y1 = -x * sr + y * cr;           // roll
-    const y2 = y1 * cp + z * sp, z2 = -y1 * sp + z * cp;          // pitch
-    o.x = x1 * cy + z2 * sy; o.y = y2; o.z = -x1 * sy + z2 * cy;  // yaw
-    return o;
-  };
+  JR.cr = Math.cos(roll); JR.sr = Math.sin(roll);
+  JR.cp = Math.cos(pitch); JR.sp = Math.sin(pitch);
+  JR.cy = Math.cos(yaw); JR.sy = Math.sin(yaw);
+  JR.sx = cfg.flightShipSpan / 1.2;
+  JR.sz = cfg.flightShipLength / 1.68;
+  const sz = JR.sz;
+  const rot = rotJet;
+  jetSprites();
   for (let i = 0; i < V.length; i++) {
     const t = rot(V[i][0], V[i][1], V[i][2], T[i]);
     proj(r, cam, f.x + t.x, f.y + t.y, f.distance + t.z, Q);
@@ -665,12 +843,12 @@ function drawJet(r, s, p, f, cam) {
   for (let i = 0; i < POLYS.length; i++) {
     const idx = POLYS[i].idx;
     let mx = 0, my = 0, mz = 0;
-    for (const n of idx) { mx += T[n].x; my += T[n].y; mz += T[n].z; }
+    for (let q = 0; q < idx.length; q++) { const n = idx[q]; mx += T[n].x; my += T[n].y; mz += T[n].z; }
     mx /= idx.length; my /= idx.length; mz /= idx.length;
     dist[i] = (mx - ex) ** 2 + (my - ey) ** 2 + (mz - ez) ** 2;
     order[i] = i;
   }
-  order.sort((a2, b2) => dist[b2] - dist[a2]);
+  order.sort(byDist);
   ctx.lineJoin = 'round';
   for (let n = 0; n < order.length; n++) {
     const pl = POLYS[order[n]];
@@ -701,49 +879,54 @@ function drawJet(r, s, p, f, cam) {
   // Afterburner flame, glowing out of the nozzle toward the camera.
   const boost = f.boost || 0;
   const flame = 0.18 + 0.4 * boost + (f.speed || 0) * 0.003;
-  const e0 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2], {});
-  const e1 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2] - flame / sz, {});
-  const a = proj(r, cam, f.x + e0.x, f.y + e0.y, f.distance + e0.z, {});
-  const b = proj(r, cam, f.x + e1.x, f.y + e1.y, f.distance + e1.z, {});
+  const e0 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2], E0);
+  const e1 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2] - flame / sz, E1);
+  const a = proj(r, cam, f.x + e0.x, f.y + e0.y, f.distance + e0.z, EA);
+  const b = proj(r, cam, f.x + e1.x, f.y + e1.y, f.distance + e1.z, EB);
   const k0 = r.f / (f.distance + e0.z - cam.z);
   const flick = 0.85 + 0.15 * Math.sin(performance.now() / 37);
   ctx.globalCompositeOperation = 'lighter';
   const rad = 0.11 * k0 * flick * (1 + 0.5 * boost);
-  let g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, rad * 1.6);
-  g.addColorStop(0, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.35, boost > 0.3 ? 'rgba(140,200,255,0.7)' : 'rgba(255,170,70,0.7)');
-  g.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(a.x, a.y, rad * 1.6, 0, Math.PI * 2);
-  ctx.fill();
-  g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-  g.addColorStop(0, 'rgba(255,240,200,0.9)');
-  g.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = g;
+  drawGlow(ctx, boost > 0.3 ? burnerCool : burnerWarm, a.x, a.y, rad * 1.6);
+  // The flame: two overlapping tapers (long and faint, short and bright).
+  ctx.fillStyle = '#ffd9a0';
+  ctx.globalAlpha = 0.4;
   ctx.beginPath();
   ctx.moveTo(a.x - rad * 0.8, a.y);
   ctx.lineTo(a.x + rad * 0.8, a.y);
   ctx.lineTo(b.x, b.y);
   ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(a.x - rad * 0.8, a.y);
+  ctx.lineTo(a.x + rad * 0.8, a.y);
+  ctx.lineTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // The engine trail: a glowing ribbon that follows where the jet has been,
+  // so it curves when you steer (longer and brighter when boosting), plus
+  // thin white streaks off the wingtips in hard turns.
+  if (trail) {
+    const g = geometry(r, cam);
+    g.camH = cam.y; // the exact camera height (the ribbon is in the air)
+    drawTrailRibbon(g, trail, a.x, a.y, e0.x, e0.y, e0.z, 1.0 + 0.6 * boost, 0.16 + 0.06 * boost,
+      boost > 0.3 ? '#a8d4ff' : '#ffc68a', 0.3 + 0.3 * boost);
+    const hard = Math.min(1, Math.max(0, Math.abs(roll) / (cfg.flightRollDeg * DEG) - 0.5) * 2);
+    if (hard > 0) {
+      const tl = T[TIP_L], tr = T[TIP_R];
+      drawTrailLine(g, trail, tl.sx, tl.sy, tl.x, tl.y, tl.z, 1.3, 0.55 * hard);
+      drawTrailLine(g, trail, tr.sx, tr.sy, tr.x, tr.y, tr.z, 1.3, 0.55 * hard);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+  }
 
   // Navigation lights: red on the left wingtip, green on the right, and a
   // white strobe that blinks now and then.
-  const now = performance.now();
-  const strobe = now % 1400 < 70;
-  ctx.globalCompositeOperation = 'lighter';
-  for (const [i, col] of [[TIP_L, '255,60,60'], [TIP_R, '60,255,110']]) {
-    const t = T[i];
-    const rr = strobe ? 9 : 5;
-    const gl = ctx.createRadialGradient(t.sx, t.sy, 0, t.sx, t.sy, rr);
-    gl.addColorStop(0, strobe ? 'rgba(255,255,255,1)' : `rgba(${col},1)`);
-    gl.addColorStop(1, `rgba(${col},0)`);
-    ctx.fillStyle = gl;
-    ctx.beginPath();
-    ctx.arc(t.sx, t.sy, rr, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const strobe = performance.now() % 1400 < 70;
+  const rr = strobe ? 9 : 5;
+  drawGlow(ctx, strobe ? navWhite : navRed, T[TIP_L].sx, T[TIP_L].sy, rr);
+  drawGlow(ctx, strobe ? navWhite : navGreen, T[TIP_R].sx, T[TIP_R].sy, rr);
   ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -823,7 +1006,9 @@ export function drawChopperControls(r, cc, hover, leverHeld, stick) {
 
   // The cyclic: the floating joystick, or a faint ring where it would go.
   if (stick) {
-    drawJoystick(r, { x0: stick.x0, y0: stick.y0, x: stick.x, y: stick.y });
+    // The thumb record has x0, y0, x and y, which is all the ring needs. Its
+    // centre (x0, y0) follows the thumb, so the ring follows too.
+    drawJoystick(r, stick);
   } else {
     const R = r.config.joystickRadiusPx;
     const gx = cc.side === 'right' ? Math.max(R + 20, r.w * 0.3) : Math.min(r.w - R - 20, r.w * 0.7);

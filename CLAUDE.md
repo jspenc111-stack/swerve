@@ -29,8 +29,10 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - 3D Heli's feel lives in the `chopper…` values.
   - "Make it harder/easier" means changing obstacle settings and speeds, **never** the fairness settings listed under Hard rules.
   - In Classic, the main difficulty settings are `density` (how many cubes) and `swing` (how far the open path swings away from your line, so you must steer), plus `classicSpeedFactor` (Classic-only speed). Make the game harder or easier with these.
+    - `flank` adds cubes just beside the open path, so cubes rush past close by. Use it when a level feels empty or quiet; it adds excitement without blocking the path.
+    - The `classic-action` test checks that every level gives the player enough to do (dodges and close passes). If the owner asks for a calmer or busier Classic, change its targets to match, and say so in the PR.
   - **Each mode has its own speed and control settings. Changing one mode's feel must not change another's.**
-    - Classic: `classicSpeedFactor`, `steerAccel`/`maxSteerSpeed`/`steerFriction`, tilt and drag.
+    - Classic: `classicSpeedFactor`, `steerAccel`/`maxSteerSpeed`/`steerFriction`, `classicReverseBoost` (quicker turn-arounds), `shipLeanEase` (look only), tilt and drag. In drag mode the centre follows the thumb.
     - 3D Flight: `flightSteerAccel`/`flightMaxSteerSpeed`/`flightSteerFriction`, `climbAccel`/`flightMaxClimbSpeed`/`climbFriction`, `flightReverseBoost`, `flightJoystickRadiusPx` and `flightMaxAltitude`.
       - **The steering feel comes from `flightFeelPresets`** (`fine`, `medium` and `quick`), which the owner chooses in Settings (default `fine`). Each preset sets:
         - `ringPx`: the joystick size, which replaces `flightJoystickRadiusPx`;
@@ -40,7 +42,8 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
       - The joystick's centre follows the thumb, separately on each axis, so it's never more than `ringPx` away. Keep it per axis, so full sideways and full up/down still work together on a diagonal.
       - The jet's bank and nose angles are eased (`flightAttitudeEase`, look only).
       - **Tuning feel:** "too slow to turn" → raise `boost` or `accelScale`, or lower `ringPx`. "Too twitchy or bouncy, or not precise enough" → raise `curve` or `ringPx`, or lower `boost`. Change the preset the owner uses (Fine unless they say otherwise), and keep Quick equal to the v1.5.3 feel.
-    - 3D Heli: the `chopper…` values, `joystickRadiusPx` and `chopperMaxAltitude`.
+    - 3D Heli: the `chopper…` values, `joystickRadiusPx` and `chopperMaxAltitude`. The cyclic's centre follows the thumb, per axis.
+    - **Whenever a control gets quicker, ease the matching look angle** (lean, bank, nose). Otherwise the craft visibly rocks and feels "bouncy".
     - `baseSpeed` and `speedPerLevel` are shared by every mode except Helicopter.
   - 3D Flight's course is laid out with `maxSteerSpeed`/`maxClimbSpeed` (the course values), not the jet's own maximums. Making the jet more agile doesn't change the courses.
 - New obstacle patterns go in the mode's spawner, with a fairness test:
@@ -54,6 +57,12 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - Helicopter in `renderHeli.js`.
 
   `main.js` runs all four modes.
+- **Visuals:**
+  - Each level's look is its `scene` block and palette in `config.js`. Change looks there first.
+  - Skies and horizons are in `scenery.js`. They're drawn once into an off-screen canvas and reused; only animated things (rain, lightning bolts) are drawn live.
+  - Particles (trails, sparks, crash shards, dust) use the pooled, pure-logic `particles.js`.
+  - `quality.js` lowers the drawing resolution, then the effects, if the frame rate drops.
+  - The owner's "Visual effects" setting is Full or Lite. Every new effect must say what it does on Lite.
 - A change to `flightSpawner.js` affects both 3D Flight and 3D Heli. Run both modes' fairness tests.
 
 ## Hard rules
@@ -65,6 +74,12 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
   - No network requests beyond the app's own files.
 - Keep the Content Security Policy in `index.html` intact.
 - The only stored data is the `swerve:v1` key in localStorage: best score and level per mode, settings, and score history. Don't add more without the owner's say-so.
+- **Visual rules:**
+  - Obstacles must stay the clearest thing on screen. Scenery sits in the sky or is low-contrast, and must never look like something you could hit.
+  - All art is drawn in code: no image files, fonts or other assets.
+  - Don't create gradients, arrays or objects every frame in the draw loops. Cache and reuse them.
+  - Effects never change the rules. Near-miss sparks, zooms and slow motion are look and sound only: no score, speed or hitbox changes.
+  - Keep a smooth frame rate on the Pixel 10 on every level and mode. Check with `?debug=1` after any visual change.
 - The repo is **public**. Never commit personal information (names, emails, locations, anything about the owner).
 - **Fairness: there is always a way through.**
   - Every obstacle pattern must leave a passable gap: `minGapWidth`, plus `minGapHeight` in 3D Flight and 3D Heli, and `heliMinGap` in Helicopter.
@@ -82,5 +97,5 @@ It's a PWA hosted on GitHub Pages and played on an Android phone (Pixel 10). The
 ## Quick reference
 - Run tests: `node --test`
 - Classic changes must not change 3D Flight, Helicopter or 3D Heli. Shared settings (`breatherBefore`, `breatherAfter`, `fogDistance`) affect all of them.
-- Debug view: open the site with `?debug=1`. It shows FPS, hitboxes, the invincible toggle and level skip; in Helicopter and 3D Heli, also the open path; in 3D Heli, also the lever, stick and multiplier values.
+- Debug view: open the site with `?debug=1`. It shows FPS, the resolution step and effects level, hitboxes, the invincible toggle and level skip; in Helicopter and 3D Heli, also the open path; in 3D Heli, also the lever, stick and multiplier values.
 - Live site: `https://<github-username>.github.io/swerve/`

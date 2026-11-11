@@ -14,6 +14,9 @@
 // Patterns with a `swing` setting keep pushing the open lane away from the
 // player's current line, so flying straight soon runs into the field.
 //
+// Patterns with a `flank` setting add a few extra cubes just beside the open
+// lane (never in it), so there is always something rushing past close by.
+//
 // New cubes are only ever placed beyond the fog distance, so nothing pops up
 // right in front of the player. The one exception is the start of a run:
 // prefillSpawner lays out the field from the end of the level-start breather
@@ -162,13 +165,13 @@ function advanceLane(sp, z, playerX) {
 }
 
 // Lane centre at depth z: a straight line between the last two lane points.
-function laneAt(sp, z) {
+export function laneAt(sp, z) {
   if (z <= sp.prevLaneZ) return sp.prevLaneX;
   return sp.prevLaneX + sp.laneSlope * (z - sp.prevLaneZ);
 }
 
 // Half the width around the lane centre where cube centres are not allowed.
-function laneClearance(sp, gapWidth) {
+export function laneClearance(sp, gapWidth) {
   const half = sp.config.cubeSize / 2;
   // Extra margin covers the lane's bend across a cube's depth.
   return gapWidth / 2 + half + sp.maxSlope * half + 0.15;
@@ -227,6 +230,25 @@ function scatterRow(sp, pattern, z0, playerX) {
   steerLane(sp, pattern, playerX);
   advanceLane(sp, z0 + sp.config.spawnStep, playerX);
   scatterCubes(sp, pattern.density, z0, playerX);
+  if (pattern.flank > 0) flankCubes(sp, pattern.flank, z0);
+}
+
+// "Flank" cubes: extra cubes placed just beside the open lane, on a random
+// side, so cubes rush past close by and outline the safe path. `flank` is the
+// average number per row (not scaled by the band). They obey the same
+// keep-out as every other cube, so the lane itself stays clear.
+function flankCubes(sp, flank, z0) {
+  const cfg = sp.config;
+  const count = Math.floor(flank) + (sp.random() < flank % 1 ? 1 : 0);
+  const keepOut = laneClearance(sp, cfg.minGapWidth);
+  for (let i = 0; i < count; i++) {
+    const z = z0 + cfg.cubeSize / 2 + sp.random() * cfg.spawnStep;
+    const side = sp.random() < 0.5 ? -1 : 1;
+    const offset = keepOut + 0.2 + sp.random() * 1.6;
+    const x = laneAt(sp, z) + side * offset;
+    if (Math.abs(x - laneAt(sp, z)) < keepOut) continue;
+    addCube(sp, x, z);
+  }
 }
 
 // Randomly placed cubes (about `density` per row per 60 units of width),
@@ -252,6 +274,7 @@ function clustersRow(sp, pattern, z0, playerX) {
   advanceLane(sp, z0 + cfg.spawnStep, playerX);
   const islands = scaledCount(sp, pattern.chance);
   for (let i = 0; i < islands; i++) island(sp, pattern, z0, playerX);
+  if (pattern.flank > 0) flankCubes(sp, pattern.flank, z0);
 }
 
 function island(sp, pattern, z0, playerX) {

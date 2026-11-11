@@ -7,6 +7,7 @@
 //   sides — hold the left or right half of the screen (most recent touch wins)
 //   tilt  — tilt the phone; "straight" is whatever angle you held at the start
 //   drag  — steer toward where your finger is, relative to where it first touched
+//           (the centre follows your thumb if you drag past the full range)
 // In 3D Flight mode, touch works as a joystick (drag in any direction from
 // where you touched; the centre follows your thumb if you push past the
 // ring), and tilt uses both left/right and forward/back tilt.
@@ -262,7 +263,13 @@ export function getSteer(input, viewWidth) {
   const p = input.pointers[input.pointers.length - 1]; // most recent touch
   if (!p) return 0;
   if (input.mode === 'drag') {
-    return Math.max(-1, Math.min(1, (p.x - p.startX) / cfg.dragRangePx));
+    // The centre follows the thumb: if it has gone more than dragRangePx past
+    // where it started, slide the start point along so it's exactly that far
+    // behind. Turning back then responds at once.
+    const R = cfg.dragRangePx;
+    if (p.x - p.startX > R) p.startX = p.x - R;
+    else if (p.startX - p.x > R) p.startX = p.x + R;
+    return Math.max(-1, Math.min(1, (p.x - p.startX) / R));
   }
   return p.x < viewWidth / 2 ? -1 : 1;
 }
@@ -375,6 +382,13 @@ export function updateChopperControls(cc, dt, keys = NO_KEYS) {
     cc.stickY = ky;
   } else if (t) {
     const R = cc.config.joystickRadiusPx;
+    // The centre follows the thumb, on each axis separately: it's never more
+    // than R away, so pulling back responds at once. Per axis (not a circle),
+    // so a diagonal still gives full sideways AND full forward together.
+    if (t.x - t.x0 > R) t.x0 = t.x - R;
+    else if (t.x0 - t.x > R) t.x0 = t.x + R;
+    if (t.y - t.y0 > R) t.y0 = t.y - R;
+    else if (t.y0 - t.y > R) t.y0 = t.y + R;
     cc.stickX = Math.max(-1, Math.min(1, (t.x - t.x0) / R));
     cc.stickY = Math.max(-1, Math.min(1, -(t.y - t.y0) / R));
   } else {

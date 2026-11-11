@@ -85,32 +85,91 @@ test('3D Flight joystick: inside the ring, the centre stays put', () => {
   assert.equal(p.startY, 400);
 });
 
-test('Classic drag steering is unchanged: its centre does not move', () => {
+// ---- v1.6: Classic drag and the 3D Heli cyclic follow the thumb too ----
+
+test('Classic drag: the centre follows the thumb, so turning back responds at once', () => {
+  const R = CONFIG.dragRangePx;
   const input = touch(200, 400);
   const p = input.pointers[0];
-  p.x = 200 + CONFIG.dragRangePx * 3;
+  p.x = 200 + R * 3;
   assert.equal(getSteer(input, 1000), 1);
-  assert.equal(p.startX, 200, 'centre stays where the thumb first touched');
-  p.x = 200 + CONFIG.dragRangePx; // back a long way, still full right
-  assert.equal(getSteer(input, 1000), 1);
-  p.x = 200 - CONFIG.dragRangePx / 2;
-  close(getSteer(input, 1000), -0.5, 'measured from the first touch');
+  assert.equal(p.startX, 200 + R * 2, 'centre slid along to exactly dragRangePx behind the thumb');
+  p.x -= R; // turn back 80 px
+  close(getSteer(input, 1000), 0, 'turning back 80 px gives an input of about 0');
+  p.x -= R;
+  assert.equal(getSteer(input, 1000), -1, 'and another 80 px is full the other way');
+  assert.equal(p.startX, 200 + R * 2, 'the centre only moves when the thumb passes the full range');
+  // The other direction works the same.
+  p.x = 200 - R * 4;
+  assert.equal(getSteer(input, 1000), -1);
+  assert.equal(p.startX, 200 - R * 3);
 });
 
-test('3D Heli cyclic is unchanged: its centre does not move', () => {
+test('Classic drag: inside the range nothing changes (measured from the first touch)', () => {
+  const input = touch(200, 400);
+  const p = input.pointers[0];
+  p.x = 200 + CONFIG.dragRangePx / 2;
+  close(getSteer(input, 1000), 0.5);
+  p.x = 200 - CONFIG.dragRangePx / 4;
+  close(getSteer(input, 1000), -0.25);
+  assert.equal(p.startX, 200);
+});
+
+test('Classic hold-sides is unchanged', () => {
+  const input = touch(200, 400);
+  input.mode = 'sides';
+  const p = input.pointers[0];
+  assert.equal(getSteer(input, 1000), -1);
+  p.x = 900;
+  assert.equal(getSteer(input, 1000), 1);
+  assert.equal(p.startX, 200, 'hold-sides never moves the start point');
+});
+
+test('3D Heli cyclic: the centre follows the thumb on each axis separately', () => {
+  const R = CONFIG.joystickRadiusPx;
   const cc = createChopperControls(CONFIG);
   thumbDown(cc, 2, 700, 500, 1000);
   thumbMove(cc, 2, 700 + 200, 500 - 200);
   updateChopperControls(cc, 1 / 60);
-  assert.equal(cc.stickX, 1);
-  assert.equal(cc.stickY, 1);
+  assert.equal(cc.stickX, 1, 'a diagonal still gives full sideways…');
+  assert.equal(cc.stickY, 1, '…and full forward together');
   const t = cc.thumbs[0];
-  assert.equal(t.x0, 700);
-  assert.equal(t.y0, 500);
-  thumbMove(cc, 2, 700 + 100, 500);
+  assert.equal(t.x0, 900 - R, 'centre is exactly one ring behind the thumb, sideways');
+  assert.equal(t.y0, 300 + R, 'and up/down');
+  // Pull back one ring-width sideways: the stick is centred at once on that axis only.
+  thumbMove(cc, 2, 900 - R, 300);
   updateChopperControls(cc, 1 / 60);
-  assert.equal(cc.stickX, 1, 'still full right 100 px out (70 px ring)');
-  assert.equal(cc.stickY + 0, 0);
+  close(cc.stickX, 0);
+  assert.equal(cc.stickY, 1, 'the other axis is untouched');
+  assert.equal(t.y0, 300 + R);
+});
+
+test('3D Heli cyclic: inside the ring the centre stays put', () => {
+  const R = CONFIG.joystickRadiusPx;
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 2, 700, 500, 1000);
+  thumbMove(cc, 2, 700 + R / 2, 500 + R / 2);
+  updateChopperControls(cc, 1 / 60);
+  close(cc.stickX, 0.5);
+  close(cc.stickY, -0.5);
+  assert.equal(cc.thumbs[0].x0, 700);
+  assert.equal(cc.thumbs[0].y0, 500);
+});
+
+test('3D Heli: the collective lever is unaffected by the follow-thumb cyclic', () => {
+  const cc = createChopperControls(CONFIG);
+  thumbDown(cc, 1, 100, 600, 1000); // lever thumb (left 40%)
+  thumbDown(cc, 2, 700, 500, 1000); // stick thumb
+  thumbMove(cc, 1, 100, 600 - CONFIG.collectiveTravelPx / 2);
+  thumbMove(cc, 2, 700 + 300, 500 - 300);
+  updateChopperControls(cc, 1 / 60);
+  close(cc.lever, 0.5);
+  const lever = cc.thumbs.find((q) => q.role === 'lever');
+  assert.equal(lever.x0, 100, "the lever thumb's start point never moves");
+  assert.equal(lever.y0, 600);
+  thumbMove(cc, 2, 700, 500);
+  updateChopperControls(cc, 1 / 60);
+  close(cc.lever, 0.5, 'moving the stick never moves the lever');
 });
 
 // ---- Fix 2: quick braking ----

@@ -39,6 +39,12 @@ const PRECACHE = [
   './js/input.js',
   './js/audio.js',
   './js/storage.js',
+  './js/quality.js',
+  './js/sprites.js',
+  './js/scenery.js',
+  './js/groundFx.js',
+  './js/particles.js',
+  './js/fx.js',
 ];
 
 self.addEventListener('install', (event) => {

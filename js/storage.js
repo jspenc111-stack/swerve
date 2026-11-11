@@ -9,6 +9,7 @@ export const GAME_MODES = ['classic', 'flight', 'heli', 'chopper'];
 export const DEFAULT_HISTORY_MAX = 100;
 export const COLLECTIVE_SIDES = ['left', 'right'];
 export const FLIGHT_FEELS = ['fine', 'medium', 'quick'];
+export const EFFECTS_LEVELS = ['full', 'lite'];
 
 export function defaultSave() {
   return {
@@ -27,7 +28,8 @@ export function defaultSave() {
       // once they've been set, so older saves load exactly as they were. Read
       // them with collectiveSideOf() and seenChopperTipsOf().
       // 3D Flight's Steering feel (flightFeel) works the same way: read it
-      // with flightFeelOf().
+      // with flightFeelOf(). So does Visual effects (effects): read it with
+      // effectsOf().
     },
     history: [],
   };
@@ -89,6 +91,7 @@ export function loadSave(storage = defaultStorage(), max = DEFAULT_HISTORY_MAX) 
     if (COLLECTIVE_SIDES.includes(s.collectiveSide)) save.settings.collectiveSide = s.collectiveSide;
     if (typeof s.seenChopperTips === 'boolean') save.settings.seenChopperTips = s.seenChopperTips;
     if (FLIGHT_FEELS.includes(s.flightFeel)) save.settings.flightFeel = s.flightFeel;
+    if (EFFECTS_LEVELS.includes(s.effects)) save.settings.effects = s.effects;
   }
   if (Array.isArray(raw.history)) {
     for (const run of raw.history) {
@@ -126,6 +129,7 @@ export function writeSave(save, storage = defaultStorage()) {
   if (COLLECTIVE_SIDES.includes(save.settings.collectiveSide)) clean.settings.collectiveSide = save.settings.collectiveSide;
   if (typeof save.settings.seenChopperTips === 'boolean') clean.settings.seenChopperTips = save.settings.seenChopperTips;
   if (FLIGHT_FEELS.includes(save.settings.flightFeel)) clean.settings.flightFeel = save.settings.flightFeel;
+  if (EFFECTS_LEVELS.includes(save.settings.effects)) clean.settings.effects = save.settings.effects;
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(clean));
     return true;
@@ -147,6 +151,21 @@ export function seenChopperTipsOf(save) {
 // 3D Flight: the Steering feel, 'fine' (the default), 'medium' or 'quick'.
 export function flightFeelOf(save) {
   return FLIGHT_FEELS.includes(save.settings.flightFeel) ? save.settings.flightFeel : 'fine';
+}
+
+// Visual effects: 'full' (the default) or 'lite' (keeps the skies and cube
+// shading; turns off rain, ambient particles, reflections, speed lines and
+// the boost zoom).
+export function effectsOf(save) {
+  return EFFECTS_LEVELS.includes(save.settings.effects) ? save.settings.effects : 'full';
+}
+
+// The effects level to actually use. If the owner has never chosen and the
+// phone asks for less motion ("reduce motion"), start on Lite. A choice made
+// in Settings always wins.
+export function startingEffects(save, reducedMotion = false) {
+  if (EFFECTS_LEVELS.includes(save.settings.effects)) return save.settings.effects;
+  return reducedMotion ? 'lite' : 'full';
 }
 
 // Names of the best score / best level fields for each game mode.

@@ -64,7 +64,13 @@ There are four modes, chosen on the start screen: **Classic** (described above),
 │   ├── renderHeli.js       # Helicopter drawing to canvas (side-view cave, helicopter, smoke, gems)
 │   ├── input.js            # touch, joystick, tilt, keyboard, Boost button, Helicopter "hold anywhere", 3D Heli two thumbs
 │   ├── audio.js            # tiny synthesized sounds (Web Audio, no files)
-│   └── storage.js          # localStorage wrapper (best scores, settings, history)
+│   ├── storage.js          # localStorage wrapper (best scores, settings, history)
+│   ├── quality.js          # auto quality: lowers the drawing resolution, then the effects, if frames get slow (pure logic)
+│   ├── particles.js        # pooled particles and the ship's trail (pure logic)
+│   ├── scenery.js          # skies and horizons, painted once per level into off-screen canvases (scene checks are pure logic)
+│   ├── groundFx.js         # ground effects: speed streaks, water sparkle and wake, neon grid, rain splashes, shadows
+│   ├── fx.js               # draws particles, trail ribbons, the crash shockwave, boost speed lines, the level-change ring
+│   └── sprites.js          # small glow pictures, drawn once in code and reused
 ├── tests/                  # node --test files for the pure-logic modules
 ├── CLAUDE.md
 ├── SPEC.md
@@ -256,6 +262,48 @@ The game fakes 3D on a flat canvas using **perspective projection**: things furt
 
 ---
 
+## 5b. Visuals (since v1.6)
+
+**Rules:** obstacles stay the clearest thing on screen; scenery sits in the sky or on the horizon in soft palette colours and never looks like something you could hit; all art is drawn in code (no image or font files); nothing is created per frame in the draw loops; effects never change scores, speeds or hitboxes.
+
+### Skies and horizons (`scenery.js`)
+- Each level has a `scene` block in `config.js`: `sun` or `moon`, `stars`, `clouds`, `ridges` (hills, mountains, mesas, dunes or islands), `haze`, `rain`, `bolt`, `ground` (`water`, `neon`, `wet`) and `ambient` (`dust`, `embers`). Optional palette entries `sun` and `ridge` override the mixed default colours.
+- The sky is painted once per level and screen size into one solid off-screen picture (sky colours, stars, sun or moon, far clouds, ridges, haze) plus one see-through strip of near clouds that drifts. Each frame the renderer stamps them; the sky shifts slightly as you steer and tilts with the view. Twinkling stars, shooting stars, rain and the lightning bolt are drawn live. Level changes cross-fade the old and new skies over `paletteFadeSec`.
+- Starting scenes: Morning (low pale sun, clouds, soft hills, haze); Sunset (big banded sun, dark mountains, thin clouds, embers); Lagoon (high sun, puffy clouds, islands, water); Gates (large moon, faint stars, dunes); Night (dense twinkling stars, crescent moon, shooting stars, neon grid); Canyon (hazy sun, three layers of mesas, dust); Tilt (drifting clouds, soft hills); Storm (heavy dark clouds, rain, forked bolts, wet ground).
+- The Helicopter cave has its own look (below), not these skies.
+
+### Cubes and blocks
+- The front face has three flat bands (lighter at the top, darker at the bottom) and a thin bright top edge; the side stays darker. Colours are worked out per fog step when the palette changes.
+- Each cube's brightness varies ±6%, fixed by its position.
+- A soft shadow sits under the nearest cubes, leaning away from the level's sun or moon; on Night it is a pool of light. Tiny far cubes are skipped.
+- 3D Flight and 3D Heli blocks, pillars and frames get the same shading. Every block, pillar, frame piece and drone has a ground shadow straight below it (fading with fog) so heights are easy to judge. Rings shimmer slowly.
+
+### Ground (`groundFx.js`)
+Speed streaks (longer and brighter with speed and boost); horizon glow; Lagoon water (drifting glints, a short reflection under cubes, a wake behind the ship); Night neon grid with a pulse travelling toward the player; Storm wet reflections and rain splashes.
+
+### Particles and feedback (`particles.js`, `fx.js`)
+- A fixed pool: at most 300 particles on Full and 80 on Lite.
+- Engine trail ribbons follow where the ship and jet have been, so they curve when you steer; thin white wingtip streaks in hard turns.
+- **Near misses** (Classic, 3D Flight): `game.js` and `flight.js` add `{ type: 'nearMiss', side }` when an obstacle's middle passes the craft with less than `nearMissDistance` (0.45) of room around the hitbox, once per obstacle, never on a hit. Feedback is sparks and a synthesized whoosh. No score change, no vibration.
+- **Crashes:** 10–14 spinning shards in the ship's colours, a shockwave ring on the ground, the hit cube bursting into bits (Classic), and slow motion for the last `crashSlowMoMs` (150 ms). The flash, shake, sound, vibration and `gameOverDelayMs` are unchanged. 3D Flight and 3D Heli get the shards and shockwave; the cave gets a shockwave.
+- **Boost:** the engine glow stretches into a flame, speed lines streak near the screen edges, and the view widens by `boostZoom` (4%, look only).
+- Ambient dust (Canyon) and embers (Sunset); gold sparkles for a ring; a ring of light at each level change; the score pops every 100 points and when it beats your best.
+
+### Helicopter cave
+A third far rock layer, floating dust motes, a headlight cone on dark levels (Night, Storm), a light rim on the cave edges near the helicopter, a glow around gems and a brighter collect sparkle, rock strata in the walls (a cached pattern), rain on Storm.
+
+### Visual effects: Full or Lite
+- Settings → Visual effects. **Full** (default) is everything above. **Lite** keeps the skies, cube shading, shadows, trails, near-miss sparks and crash effects, and turns off rain, rain splashes, ambient particles, cave dust motes, water glints, reflections, shooting stars, ground speed streaks, boost speed lines and the boost zoom; the particle cap drops to 80.
+- With the phone's "reduce motion" setting on, a phone that has never chosen starts on Lite, and the crash slow motion and boost zoom are skipped.
+
+### Auto quality (`quality.js`)
+While playing, the average of the last 60 frame times is compared with the screen's own frame time. More than 25% slower for 2 s lowers the drawing resolution one step (device pixel ratio 2 → 1.5 → 1.25); still slow at the lowest step switches effects to Lite for the rest of the run. After 10 smooth seconds it steps back up, at most once every 20 s and never mid-crash; a step up that brings the slowness straight back is not retried. The canvas is resized only when the step changes. `?debug=1` shows the step and the effects level.
+
+### Menus
+The start screen's background preview shows the chosen level's scenery, and each level picker button shows a small picture of that level's sky.
+
+---
+
 ## 6. Gameplay
 
 All numbers below are **starting values in `config.js`**, not fixed rules.
@@ -267,6 +315,11 @@ All numbers below are **starting values in `config.js`**, not fixed rules.
 - Steering uses sideways **velocity with acceleration**, not instant jumps, so it feels smooth: `steerAccel`, `maxSteerSpeed` and `steerFriction` (slowdown when you let go).
 - **Boost**: while the Boost button (or ↑/W) is held, speed eases up to `boostMultiplier` × normal (1.5×), and eases back when released (`boostEase`). More speed means points come faster. Obstacles are always laid out for full-boost speed, so the open path stays reachable whether or not you boost.
 - **Ship banking**: the ship is a small 3D model. Turning rolls it (one wing dips, up to `shipLeanDeg`) and turns the nose slightly toward the slide (`shipYawFactor`), so it still looks like it's flying forward.
+
+### Controls since v1.6
+- **Classic turn-arounds:** steering against the current sideways speed uses `steerAccel × classicReverseBoost` (1.8). Top speed, friction and speeding up from rest are unchanged. Full left to full right stops the old slide in about 112 ms (was 204) and reaches 90% the new way in about 292 ms (was 383).
+- **Eased lean:** the ship's roll and nose angle ease toward its speed (`shipLeanEase` 12, look only).
+- **Follow-thumb centres:** in Classic drag mode the start point slides along so it is never more than `dragRangePx` behind the thumb. The 3D Heli cyclic does the same per axis with `joystickRadiusPx`, and its ring follows. Hold-sides, tilt, the collective lever, 3D Flight's presets and the Helicopter cave physics are unchanged.
 
 ### Controls (`input.js`)
 - **Hold sides** (default): touching the left half steers left and the right half steers right. Multi-touch uses the most recent touch.
@@ -347,8 +400,16 @@ Each level entry includes:
 - `flight` (3D Flight obstacles, also flown by 3D Heli without drones, §4d) and `heli` (Helicopter cave, §4c)
 - a `palette`: `sky`, `skyHorizon`, `ground`, `cube`, `ship`, `grid` (optional) and `text`
 - optional `effects`: `roll`, `lightning`, `glow`
+- a `scene` block (since v1.6): the level's sky and ground look, see §5b
 
 Adding a level means adding one entry to this list. No other code changes are needed.
+
+### Classic field since v1.6: `flank` cubes and the action test
+
+- **`flank`** (optional, on `scatter` and `clusters`, also inside `mixed`): the average number of extra cubes per row placed just beside the open lane, on a random side, at `laneAt(z) ± (laneClearance + 0.2 + random × 1.6)`. It is not scaled by the band. Flank cubes obey the same keep-out as every other cube, so the lane stays clear and fairness is unchanged. They make cubes rush past close by and outline the safe path.
+- **Level values (v1.6):** Morning `density 2.9, flank 0.15`; Sunset `density 3.7, flank 0.18`; Lagoon `chance 0.95, flank 0.2`; Gates `between 1.8`; Night `flank 0.12`; Tilt scatter `density 3.7, flank 0.18` and clusters `chance 0.95, flank 0.2`; Storm scatter `density 4.6, flank 0.2` and clusters `chance 1.0, flank 0.2`. Canyon, every `swing`, the gate spacings and every `flight`/`heli` block are unchanged.
+- **`tests/classic-action.test.js`:** a reactive test pilot (looks 0.9 s ahead; steers to the nearest clear line only when a cube is on a collision course) flies each level, invincible, band 62, 24 seeds. Every level needs at least 6 dodges per 10 s and 0.5 close passes per second (a cube within 1.2 units of the ship's side). Canyon, a pure corridor whose walls pass close the whole time, has its own dodge target of 3 per 10 s. Lagoon's close passes must be at least 80% of Sunset's; that comparison uses 480 seeds because the ratio is noisy with fewer.
+- A pilot who never steers is caught sooner on Morning than before (the flank cubes sit where a non-steering ship drifts). If Morning ever feels harsh at the very start, lower its `flank`.
 
 ---
 
@@ -400,7 +461,7 @@ Adding a level means adding one entry to this list. No other code changes are ne
 ## 10. Privacy (hard rules)
 
 - **No accounts, no server and no database.** The game runs entirely on the phone.
-- **The only stored data** is the best score and best level for each mode (Classic, 3D Flight, Helicopter, 3D Heli), settings (including the chosen start level, game mode, 3D up/down choice, 3D auto-fire on/off, the 3D Flight Steering feel (`flightFeel`: fine/medium/quick, since v1.5.4), which side the 3D Heli lift lever is on, and whether the 3D Heli tips have been seen) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
+- **The only stored data** is the best score and best level for each mode (Classic, 3D Flight, Helicopter, 3D Heli), settings (including the chosen start level, game mode, 3D up/down choice, 3D auto-fire on/off, the 3D Flight Steering feel (`flightFeel`: fine/medium/quick, since v1.5.4), Visual effects (`effects`: full/lite, since v1.6), which side the 3D Heli lift lever is on, and whether the 3D Heli tips have been seen) and the score history (score, level reached, start level, mode and date/time of each run), kept in the phone's `localStorage` under one key, `swerve:v1`. Nothing else is saved, and none of it ever leaves the phone.
 - **Nothing is ever sent anywhere.**
   - No analytics, ads, trackers or crash reporting.
   - No third-party scripts, fonts or CDNs.
@@ -500,4 +561,7 @@ It isn't linked from anywhere. It helps the owner preview new levels quickly.
 - 3D Heli: **landing challenges**: set down gently on a pad mid-level for a big bonus.
 - 3D Heli: **tail rotor pedals** (turning the nose) as an optional third control for experts.
 - The same **swinging open path** (`swing`, §7) for 3D Flight and 3D Heli, if they feel too easy to fly straight.
-- The same **"centre follows the thumb" joystick** (v1.5.3, 3D Flight) for the 3D Heli cyclic, if it ever feels slow to change direction.
+- ~~The same "centre follows the thumb" joystick for the 3D Heli cyclic~~: built in v1.6.
+- Unlockable ship colors and trail styles.
+- A photo mode that hides the on-screen display on the pause screen.
+- Snappier lift for the Helicopter cave, if it ever feels sluggish. Its fair path is built from the lift values, so the cave would need re-testing.

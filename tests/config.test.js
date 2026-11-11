@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CONFIG, LEVELS, APP_VERSION } from '../js/config.js';
 import { isValidColor, PALETTE_KEYS } from '../js/levels.js';
+import { validateScene, SCENE_ELEMENTS, sceneColors, sceneLight } from '../js/scenery.js';
 
 const PATTERNS = ['scatter', 'clusters', 'gates', 'canyon', 'mixed'];
 
@@ -17,6 +18,11 @@ function checkPattern(p, where) {
     assert.ok(p.type === 'scatter' || p.type === 'clusters', `${where}: swing only works on scatter and clusters`);
     assert.equal(typeof p.swing, 'number', `${where}: swing must be a number`);
     assert.ok(p.swing > 0 && p.swing <= CONFIG.laneLeash - 1, `${where}: swing must be above 0 and at most laneLeash − 1`);
+  }
+  if (p.flank !== undefined) {
+    assert.ok(p.type === 'scatter' || p.type === 'clusters', `${where}: flank only works on scatter and clusters`);
+    assert.equal(typeof p.flank, 'number', `${where}: flank must be a number`);
+    assert.ok(p.flank >= 0, `${where}: flank must be 0 or more`);
   }
   switch (p.type) {
     case 'scatter': num('density'); break;
@@ -132,7 +138,8 @@ test('the ship contrasts with the ground on every level', () => {
 
 test('tuning numbers are sensible', () => {
   // The 3D Flight Steering feel presets are checked in flight-feel.test.js.
-  const NOT_NUMBERS = new Set(['flightFeelPresets', 'flightFeelDefault']);
+  // The auto-quality steps are a list, checked in quality.test.js.
+  const NOT_NUMBERS = new Set(['flightFeelPresets', 'flightFeelDefault', 'qualitySteps']);
   for (const [key, value] of Object.entries(CONFIG)) {
     if (NOT_NUMBERS.has(key)) continue;
     assert.equal(typeof value, 'number', `${key} should be a number`);
@@ -214,4 +221,33 @@ test('3D Heli values are all present and sensible', () => {
   assert.ok(CONFIG.chopperLevelDistance > CONFIG.breatherBefore + CONFIG.breatherAfter + CONFIG.fogDistance);
   assert.ok(CONFIG.chopperCameraBack > CONFIG.chopperLength, 'camera sits behind the helicopter');
   assert.ok(CONFIG.collectiveTravelPx >= 60);
+});
+
+// ---- v1.6: every level has a scene block (its sky and ground look) ----
+
+test('every level has a valid scene block with known elements and valid colors', () => {
+  LEVELS.forEach((level, i) => {
+    const where = `level ${i + 1} (${level.name})`;
+    assert.ok(level.scene && typeof level.scene === 'object', `${where}: scene block missing`);
+    assert.ok(Object.keys(level.scene).length > 0, `${where}: scene is empty`);
+    for (const key of Object.keys(level.scene)) assert.ok(SCENE_ELEMENTS.includes(key), `${where}: unknown scene element "${key}"`);
+    assert.deepEqual(validateScene(level.scene, level.palette), [], `${where}: scene problems`);
+    const colors = sceneColors(level.palette, level.scene);
+    for (const [name, c] of Object.entries(colors)) assert.ok(isValidColor(c), `${where}: scene colour ${name} = ${c}`);
+    const light = sceneLight(level.scene);
+    assert.ok(light >= -1 && light <= 1, `${where}: light direction`);
+  });
+});
+
+test('ridges stay low on the horizon, so scenery never looks like an obstacle', () => {
+  for (const level of LEVELS) {
+    if (level.scene.ridges) assert.ok(level.scene.ridges.height <= 0.1, `${level.name}: ridges too tall`);
+  }
+});
+
+test('the Storm level has rain and bolts to go with its lightning; Night has the glowing grid', () => {
+  const storm = LEVELS.find((l) => l.effects && l.effects.lightning);
+  assert.ok(storm.scene.bolt === true && storm.scene.rain, 'Storm: rain and bolt');
+  const night = LEVELS.find((l) => l.effects && l.effects.glow);
+  assert.equal(night.scene.ground, 'neon');
 });

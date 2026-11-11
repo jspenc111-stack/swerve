@@ -7,6 +7,14 @@
 // so far-away things are smaller and closer to the horizon.
 
 import { mixColor } from './levels.js';
+import { glowSprite, drawGlow, drawGlowOval } from './sprites.js';
+import { createScenery, drawSky, drawRain, sceneOf, sceneLight, fillSkySurround } from './scenery.js';
+import {
+  drawSpeedStreaks, drawWaterGlints, drawWake, drawRainSplashes, drawNeonGrid, drawGroundShadow,
+} from './groundFx.js';
+import {
+  drawParticles, drawTrailRibbon, drawTrailLine, drawShockwave, drawSpeedLines, drawLevelRing,
+} from './fx.js';
 
 const FOG_STEPS = 24;
 const SMALL_CUBE_PX = 4; // cubes narrower than this on screen are drawn as one rectangle
@@ -19,21 +27,25 @@ export function createRenderer(canvas, config) {
     w: 1, h: 1, dpr: 1, f: 1, cx: 0, horizonY: 0,
     visible: [],
     paletteKey: '',
-    shades: { front: [], top: [], side: [], edge: [] },
+    shadeSets: [0, 1, 2].map(() => ({ front: [], frontHi: [], frontLo: [], top: [], side: [], edge: [], rim: [] })),
+    shades: null,
+    scenery: createScenery(),
     gradKey: '',
     skyGrad: null,
     groundGrad: null,
     shipKey: '',
     shipShades: [],
+    scaleCap: Infinity, // auto quality's sharpness cap (see quality.js)
   };
   resizeRenderer(r);
   return r;
 }
 
-// Call on window resize only (never every frame).
+// Call on window resize, or when auto quality changes the sharpness step
+// (never every frame).
 export function resizeRenderer(r) {
   const cfg = r.config;
-  r.dpr = Math.min(window.devicePixelRatio || 1, cfg.maxDevicePixelRatio);
+  r.dpr = Math.min(window.devicePixelRatio || 1, cfg.maxDevicePixelRatio, r.scaleCap || Infinity);
   r.w = window.innerWidth;
   r.h = window.innerHeight;
   r.canvas.width = Math.round(r.w * r.dpr);
@@ -46,29 +58,72 @@ export function resizeRenderer(r) {
 }
 
 // Precompute cube face colors for each fog step (only when the palette changes).
+// There are three sets, a touch darker, normal and a touch lighter (±6%), so a
+// field of cubes doesn't look copy-pasted; each cube picks one from its position.
+const VARIANTS = [-0.06, 0, 0.06];
 function updateShades(r, p) {
   const key = p.cube + p.skyHorizon + p.ground;
   if (key === r.paletteKey) return;
   r.paletteKey = key;
-  const top = mixColor(p.cube, '#ffffff', 0.28);
-  const side = mixColor(p.cube, '#000000', 0.3);
-  const edge = mixColor(p.cube, '#ffffff', 0.65);
-  for (let i = 0; i < FOG_STEPS; i++) {
-    const t = i / (FOG_STEPS - 1);
-    r.shades.front[i] = mixColor(p.cube, p.skyHorizon, t);
-    r.shades.top[i] = mixColor(top, p.skyHorizon, t);
-    r.shades.side[i] = mixColor(side, p.skyHorizon, t);
-    r.shades.edge[i] = mixColor(edge, p.skyHorizon, t);
+  for (let v = 0; v < VARIANTS.length; v++) {
+    const d = VARIANTS[v];
+    const base = d < 0 ? mixColor(p.cube, '#000000', -d) : mixColor(p.cube, '#ffffff', d);
+    const top = mixColor(base, '#ffffff', 0.28);
+    const side = mixColor(base, '#000000', 0.3);
+    const edge = mixColor(base, '#ffffff', 0.65);
+    // The front face's gentle gradient is three flat bands (lighter at the
+    // top, darker at the bottom), in colours worked out here once.
+    const hi = mixColor(base, '#ffffff', 0.1);
+    const lo = mixColor(base, '#000000', 0.09);
+    const set = r.shadeSets[v];
+    for (let i = 0; i < FOG_STEPS; i++) {
+      const t = i / (FOG_STEPS - 1);
+      set.front[i] = mixColor(base, p.skyHorizon, t);
+      set.frontHi[i] = mixColor(hi, p.skyHorizon, t);
+      set.frontLo[i] = mixColor(lo, p.skyHorizon, t);
+      set.top[i] = mixColor(top, p.skyHorizon, t);
+      set.side[i] = mixColor(side, p.skyHorizon, t);
+      set.edge[i] = mixColor(edge, p.skyHorizon, t);
+      set.rim[i] = mixColor(mixColor(hi, edge, 0.7), p.skyHorizon, t); // the top-edge highlight
+    }
   }
+  r.shades = r.shadeSets[1];
+  // Ground extras, in colours that suit this ground (lighter on dark ground,
+  // darker on light ground).
+  const dark = luminance(p.ground) < 0.45;
+  r.streakColor = dark ? mixColor(p.ground, '#ffffff', 0.45) : mixColor(p.ground, '#000000', 0.22);
+  r.neonGlow = mixColor(p.cube, '#ffffff', 0.35);
+  r.cubeGlowSprite = glowSprite(mixColor(p.cube, '#ffffff', 0.2), p.cube, 0.5);
+}
+
+export function luminance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
+// Which of the three brightness sets a cube uses: fixed by where it stands.
+export function cubeVariant(x, z) {
+  const n = Math.floor(x * 7.3) * 31 + Math.floor(z * 3.1);
+  return ((n % 3) + 3) % 3;
 }
 
 // view: { palette, bank (radians), roll (radians), shakeX, shakeY,
 //         flash (0..1), glow (0..1), lean (ship roll, radians),
-//         yaw (ship heading, radians), showShip, hitboxes }
+//         yaw (ship heading, radians), showShip, hitboxes,
+//         and for the scenery: level, prevLevel, fade (0..1), time (seconds),
+//         steer (-1 … 1, eased), lite (true = Visual effects: Lite),
+//         boltAt, boltSeed,
+//         and for the effects: particles, trail (from particles.js),
+//         zoom (1 = normal; below 1 widens the view while boosting),
+//         shockAt / shockX / shockZ (the crash ring), ringAt (the
+//         level-change ring), hideCube (the cube that was hit) }
 export function drawFrame(r, game, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
   updateShades(r, p);
+  const scene = sceneOf(view.level);
+  const lite = !!view.lite;
+  const time = view.time || 0;
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
@@ -76,21 +131,48 @@ export function drawFrame(r, game, view) {
   // Tilt the whole world around a point near the ship (bank + roll).
   const angle = (view.bank || 0) + (view.roll || 0);
   const pivotY = h * 0.62;
+  // The boost zoom: the whole picture (world and ship alike) shrinks a touch
+  // toward this point, so more of the field shows. Look only.
+  const zoom = view.zoom || 1;
   ctx.translate(r.cx, pivotY);
   ctx.rotate(angle);
+  if (zoom !== 1) ctx.scale(zoom, zoom);
   ctx.translate(-r.cx, -pivotY);
 
-  drawSkyAndGround(r, p);
   const camX = game.x;
   const camZ = game.distance - cfg.cameraBack;
-  if (p.grid) drawGrid(r, p, camX, camZ);
-  drawCubes(r, game.spawner.cubes, camX, camZ, view.glow || 0);
+  const g = GEO;
+  g.ctx = ctx; g.cx = r.cx; g.hY = r.horizonY; g.f = r.f;
+  g.camX = camX; g.camZ = camZ; g.camH = cfg.cameraHeight; g.w = w; g.h = h; g.far = cfg.fogDistance;
+
+  drawSkyAndGround(r, p, view, scene);
+  if (scene.ground === 'neon') drawNeonGrid(g, p.grid || r.neonGlow, r.neonGlow, time, view.glow ?? 1);
+  else if (p.grid) drawGrid(r, p, camX, camZ);
+  if (!lite) {
+    drawSpeedStreaks(g, game.speed || 0, game.boost || 0, r.streakColor);
+    if (scene.ground === 'water') drawWaterGlints(g, time);
+    if (scene.ground === 'wet') drawRainSplashes(g, time);
+  }
+  if (scene.ground === 'water' && view.showShip !== false) drawWake(g, 0, cfg.cameraBack, game.leanLook || 0, time);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, r.horizonY, w, time - view.ringAt);
+  const ps = view.particles;
+  if (ps) drawParticles(g, ps, true); // dust and embers go behind the cubes
+  drawCubes(r, game.spawner.cubes, camX, camZ, view.glow || 0, scene, lite, g, view.hideCube);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.hitboxes) drawHitboxes(r, game, camX, camZ);
 
   // Ship and HUD effects are not tilted by the bank.
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
-  if (view.showShip !== false) drawShip(r, p, view, game);
+  if (view.level) drawRain(ctx, r.scenery, view, w, h);
+  if (!lite) drawSpeedLines(ctx, w, h, r.cx, r.horizonY, game.boost || 0, time);
+  if (zoom !== 1) {
+    ctx.translate(r.cx, pivotY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-r.cx, -pivotY);
+  }
+  if (view.showShip !== false) drawShip(r, p, view, game, g);
+  if (ps) drawParticles(g, ps, false); // sparks, shards and cube bits on top
 
   if (view.flash > 0) {
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
@@ -101,25 +183,40 @@ export function drawFrame(r, game, view) {
   }
 }
 
-function drawSkyAndGround(r, p) {
+const GEO = { ctx: null, cx: 0, hY: 0, f: 1, camX: 0, camZ: 0, camH: 1, w: 1, h: 1, far: 1 };
+const SKY = { w: 1, h: 1, horizonY: 0, skySpan: 1, dpr: 1 };
+
+function drawSkyAndGround(r, p, view, scene) {
   const { ctx, w, h, horizonY } = r;
   // Gradients are rebuilt only when the colors or screen size change.
-  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h;
+  const hazy = scene.haze ? scene.haze.strength : 0;
+  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h + hazy;
   if (key !== r.gradKey) {
     r.gradKey = key;
     r.skyGrad = ctx.createLinearGradient(0, horizonY - h * 0.6, 0, horizonY);
     r.skyGrad.addColorStop(0, p.sky);
     r.skyGrad.addColorStop(1, p.skyHorizon);
+    // Horizon glow: the ground blends into the haze colour at the horizon.
     r.groundGrad = ctx.createLinearGradient(0, horizonY, 0, h);
-    r.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.55));
-    r.groundGrad.addColorStop(0.35, p.ground);
+    r.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.55 + 0.3 * hazy));
+    r.groundGrad.addColorStop(0.35 + 0.1 * hazy, p.ground);
     r.groundGrad.addColorStop(1, p.ground);
   }
   // Oversized so the corners stay covered when the view is tilted.
   const left = -w;
   const width = w * 3;
-  ctx.fillStyle = r.skyGrad;
-  ctx.fillRect(left, horizonY - h * 2, width, h * 2 + 1);
+  // Behind the sky picture: plain sky colour (it only shows in the far
+  // corners when the view tilts). Without a level, the old plain gradient.
+  if (view.level) fillSkySurround(ctx, p.sky, w, h, horizonY);
+  else {
+    ctx.fillStyle = r.skyGrad;
+    ctx.fillRect(left, horizonY - h * 2, width, h * 2 + 1);
+  }
+  // The level's sky scene (painted once, stamped here every frame).
+  if (view.level) {
+    SKY.w = w; SKY.h = h; SKY.horizonY = horizonY; SKY.skySpan = h * 0.6; SKY.dpr = r.dpr;
+    drawSky(ctx, r.scenery, view, SKY);
+  }
   ctx.fillStyle = r.groundGrad;
   ctx.fillRect(left, horizonY, width, h * 2);
 }
@@ -158,18 +255,26 @@ function drawGrid(r, p, camX, camZ) {
   ctx.globalAlpha = 1;
 }
 
-function drawCubes(r, cubes, camX, camZ, glow) {
-  const { ctx, f, cx, horizonY, w, visible, shades } = r;
+const SHADOW_MAX = 40;    // at most this many shadows a frame (the nearest cubes)
+const SHADOW_MIN_PX = 14; // cubes narrower than this on screen get no shadow, shading bands or reflection
+
+function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
+  const { ctx, f, cx, horizonY, w, visible } = r;
   const cfg = r.config;
   const camH = cfg.cameraHeight;
   const fogStart = cfg.fogStart;
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
+  // Shadows fall away from the level's sun or moon.
+  const shadowShift = -sceneLight(scene) * 0.45;
+  const reflect = !lite && (scene.ground === 'water' || scene.ground === 'wet');
+  const reflectAlpha = scene.ground === 'water' ? 0.2 : 0.13;
 
   // Collect cubes in view, then sort far → near (painter's algorithm).
   // Cubes at or beyond the fog distance are fully faded, so they're skipped.
   visible.length = 0;
   for (let i = 0; i < cubes.length; i++) {
     const c = cubes[i];
+    if (c === hidden) continue; // the cube that was hit has burst into bits
     const near = c.z - camZ - c.size / 2;
     if (near < 0.5 || near >= cfg.fogDistance) continue;
     const rx = c.x - camX;
@@ -201,6 +306,7 @@ function drawCubes(r, cubes, camX, camZ, glow) {
     let fog = (zn - fogStart) / fogRange;
     fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
     const fi = Math.round(fog * (FOG_STEPS - 1));
+    const shades = r.shadeSets[cubeVariant(c.x, c.z)];
 
     // Tiny, far-away cubes: one flat rectangle is enough (saves time with
     // the full field of cubes).
@@ -208,6 +314,24 @@ function drawCubes(r, cubes, camX, camZ, glow) {
       ctx.fillStyle = shades.front[fi];
       ctx.fillRect(x1, byTop < yTop ? byTop : yTop, x2 - x1, yBot - (byTop < yTop ? byTop : yTop));
       continue;
+    }
+    const big = x2 - x1 >= SHADOW_MIN_PX;
+    const clear = 1 - fog;
+
+    // Ground contact: a soft shadow under the cube, leaning away from the
+    // light. On glow levels (Night) it's a soft pool of light instead.
+    // Only the nearest cubes get one (far ones are too small to notice).
+    if (big && i >= visible.length - SHADOW_MAX) {
+      if (glow > 0.5) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.38 * glow * clear;
+        const k = f / (zn + half);
+        drawGlowOval(ctx, r.cubeGlowSprite, cx + (c.x - camX) * k, horizonY + camH * k, s * 1.15 * k, Math.max(2, camH * (kn - kf) * 1.1));
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      } else {
+        drawGroundShadow(g, c.x + shadowShift * s, c.z, half, half, 0.3 * clear * (1 - glow));
+      }
     }
 
     // Side face (the one facing the camera).
@@ -229,9 +353,34 @@ function drawCubes(r, cubes, camX, camZ, glow) {
       ctx.moveTo(x1, yTop); ctx.lineTo(x2, yTop); ctx.lineTo(bx2, byTop); ctx.lineTo(bx1, byTop);
       ctx.fill();
     }
-    // Front face.
-    ctx.fillStyle = shades.front[fi];
-    ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+    // Front face, with a gentle top-to-bottom gradient (lighter at the top)
+    // and a thin bright highlight along its top edge.
+    if (!big) {
+      ctx.fillStyle = shades.front[fi];
+      ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+    } else {
+      // Three flat bands, each painted once (nothing is painted over).
+      const fh = yBot - yTop;
+      const yA = yTop + fh * 0.36, yB = yBot - fh * 0.28;
+      ctx.fillStyle = shades.frontHi[fi];
+      ctx.fillRect(x1, yTop, x2 - x1, yA - yTop);
+      ctx.fillStyle = shades.front[fi];
+      ctx.fillRect(x1, yA, x2 - x1, yB - yA);
+      ctx.fillStyle = shades.frontLo[fi];
+      ctx.fillRect(x1, yB, x2 - x1, yBot - yB);
+      ctx.fillStyle = shades.rim[fi];
+      ctx.fillRect(x1, yTop, x2 - x1, Math.max(1, 0.035 * kn));
+      // Water and wet ground: a faint, short mirror image under the cube.
+      if (reflect) {
+        const rh = (yBot - yTop) * 0.4;
+        ctx.fillStyle = shades.front[fi];
+        ctx.globalAlpha = reflectAlpha * clear;
+        ctx.fillRect(x1, yBot, x2 - x1, rh * 0.5);
+        ctx.globalAlpha = reflectAlpha * 0.5 * clear;
+        ctx.fillRect(x1, yBot + rh * 0.5, x2 - x1, rh * 0.5);
+        ctx.globalAlpha = 1;
+      }
+    }
 
     // Subtle neon glow (e.g. the Night level). Skipped where it's too faint to see.
     const glowAlpha = glow * (1 - fog) * 0.9;
@@ -282,6 +431,7 @@ const FACETS = [
 ];
 const CANOPY = ['c0', 'c1', 'c2', 'c3', 'c4'];
 const ENGINES = ['rearR', 'rearL'];
+const TIPS = ['tipL', 'tipR'];
 const T = {};
 for (const k of Object.keys(MODEL)) T[k] = { x: 0, y: 0, z: 0, sx: 0, sy: 0 };
 const LIGHT = (() => { const l = Math.hypot(-0.45, 1, -0.25); return [-0.45 / l, 1 / l, -0.25 / l]; })();
@@ -289,6 +439,7 @@ const SHADE_STEPS = 24;
 const facetOrder = [0, 1, 2, 3];
 const facetDist = [0, 0, 0, 0];
 const HOVER = 0.28;
+const byFacetDist = (a, b) => facetDist[b] - facetDist[a];
 
 function updateShipColors(r, ship) {
   if (r.shipKey === ship) return;
@@ -303,9 +454,10 @@ function updateShipColors(r, ship) {
   r.shipEdge = mixColor(ship, '#ffffff', 0.62);
   r.shipGlass = mixColor(ship, '#0a0f1e', 0.8);
   r.shipGlow = mixColor(ship, '#ffffff', 0.72);
+  r.shipGlowSprite = glowSprite('#ffffff', r.shipGlow, 0.35);
 }
 
-function drawShip(r, p, view, game) {
+function drawShip(r, p, view, game, g) {
   const { ctx } = r;
   const cfg = r.config;
   const zc = cfg.cameraBack;
@@ -340,26 +492,25 @@ function drawShip(r, p, view, game) {
   ctx.ellipse(Q.x, Q.y, shadowW, shadowW * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Light trails straight out behind the engines (longer when faster).
-  const speed = game.speed || 0;
-  const trail = 0.22 + speed * 0.007;
+  // Engine trails: glowing ribbons that follow where the ship has been, so
+  // they curve when you steer. Longer and brighter when boosting. Thin white
+  // streaks come off the wingtips in hard turns.
   const boost = game.boost || 0;
+  const trail = view.trail;
   ctx.globalCompositeOperation = 'lighter';
-  for (const k of ENGINES) {
-    const t = T[k];
-    const z0 = zc + t.z;
-    project(r, t.x - syw * trail, HOVER + t.y, z0 - cyw * trail, Q);
-    const w = (0.05 * r.f) / z0;
-    const g = ctx.createLinearGradient(t.sx, t.sy, Q.x, Q.y);
-    g.addColorStop(0, r.shipGlow);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.globalAlpha = 0.45 + 0.35 * boost;
-    ctx.beginPath();
-    ctx.moveTo(t.sx - w, t.sy);
-    ctx.lineTo(t.sx + w, t.sy);
-    ctx.lineTo(Q.x, Q.y);
-    ctx.fill();
+  if (trail && g) {
+    const reach = 0.7 + 0.5 * boost;
+    for (let n = 0; n < 2; n++) {
+      const t = T[ENGINES[n]];
+      drawTrailRibbon(g, trail, t.sx, t.sy, t.x, HOVER + t.y, t.z, reach, 0.13 + 0.05 * boost, r.shipGlow, 0.5 + 0.3 * boost);
+    }
+    const hard = Math.min(1, Math.max(0, Math.abs(game.leanLook || 0) - 0.5) * 2);
+    if (hard > 0) {
+      for (let n = 0; n < 2; n++) {
+        const t = T[TIPS[n]];
+        drawTrailLine(g, trail, t.sx, t.sy, t.x, HOVER + t.y, t.z, 0.9, 0.6 * hard);
+      }
+    }
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
@@ -373,7 +524,7 @@ function drawShip(r, p, view, game) {
     facetDist[i] = cx * cx + (camH - HOVER - cy) ** 2 + (zc + cz) ** 2;
     facetOrder[i] = i;
   }
-  facetOrder.sort((a, b) => facetDist[b] - facetDist[a]);
+  facetOrder.sort(byFacetDist);
   for (let n = 0; n < 4; n++) {
     const f = FACETS[facetOrder[n]];
     const a = T[f[0]], b = T[f[1]], c = T[f[2]];
@@ -427,24 +578,19 @@ function drawShip(r, p, view, game) {
   ctx.lineTo((T.c4.sx * 2 + T.c3.sx) / 3, (T.c4.sy * 2 + T.c3.sy) / 3);
   ctx.stroke();
 
-  // Engine glow (a gentle flicker, bigger when boosting) and wingtip lights.
+  // Engine glow (a gentle flicker) and wingtip lights. When boosting, the
+  // glow stretches back into a flame.
   const flicker = 0.85 + 0.15 * Math.sin(performance.now() / 45);
   ctx.globalCompositeOperation = 'lighter';
-  for (const k of ENGINES) {
-    const t = T[k];
+  for (let n = 0; n < 2; n++) {
+    const t = T[ENGINES[n]];
     const rad = ((0.09 * r.f) / (zc + t.z)) * flicker * (1 + 0.3 * boost);
-    const g = ctx.createRadialGradient(t.sx, t.sy, 0, t.sx, t.sy, rad);
-    g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.35, r.shipGlow);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(t.sx, t.sy, rad, 0, Math.PI * 2);
-    ctx.fill();
+    if (boost > 0.02) drawGlowOval(ctx, r.shipGlowSprite, t.sx, t.sy + rad * 1.5 * boost, rad * (1 - 0.25 * boost), rad * (1 + 2.4 * boost));
+    drawGlow(ctx, r.shipGlowSprite, t.sx, t.sy, rad);
   }
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#ffffff';
-  for (const k of ['tipL', 'tipR']) {
+  for (const k of TIPS) {
     ctx.beginPath();
     ctx.arc(T[k].sx, T[k].sy, 2, 0, Math.PI * 2);
     ctx.fill();
