@@ -12,6 +12,9 @@ import { createScenery, drawSky, drawRain, sceneOf, sceneLight } from './scenery
 import {
   drawSpeedStreaks, drawWaterGlints, drawWake, drawRainSplashes, drawNeonGrid, drawGroundShadow,
 } from './groundFx.js';
+import {
+  drawParticles, drawTrailRibbon, drawTrailLine, drawShockwave, drawSpeedLines, drawLevelRing,
+} from './fx.js';
 
 const FOG_STEPS = 24;
 const SMALL_CUBE_PX = 4; // cubes narrower than this on screen are drawn as one rectangle
@@ -102,7 +105,11 @@ export function cubeVariant(x, z) {
 //         yaw (ship heading, radians), showShip, hitboxes,
 //         and for the scenery: level, prevLevel, fade (0..1), time (seconds),
 //         steer (-1 … 1, eased), lite (true = Visual effects: Lite),
-//         boltAt, boltSeed }
+//         boltAt, boltSeed,
+//         and for the effects: particles, trail (from particles.js),
+//         zoom (1 = normal; below 1 widens the view while boosting),
+//         shockAt / shockX / shockZ (the crash ring), ringAt (the
+//         level-change ring), hideCube (the cube that was hit) }
 export function drawFrame(r, game, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
@@ -117,8 +124,12 @@ export function drawFrame(r, game, view) {
   // Tilt the whole world around a point near the ship (bank + roll).
   const angle = (view.bank || 0) + (view.roll || 0);
   const pivotY = h * 0.62;
+  // The boost zoom: the whole picture (world and ship alike) shrinks a touch
+  // toward this point, so more of the field shows. Look only.
+  const zoom = view.zoom || 1;
   ctx.translate(r.cx, pivotY);
   ctx.rotate(angle);
+  if (zoom !== 1) ctx.scale(zoom, zoom);
   ctx.translate(-r.cx, -pivotY);
 
   const camX = game.x;
@@ -136,14 +147,25 @@ export function drawFrame(r, game, view) {
     if (scene.ground === 'wet') drawRainSplashes(g, time);
   }
   if (scene.ground === 'water' && view.showShip !== false) drawWake(g, 0, cfg.cameraBack, game.leanLook || 0, time);
-  drawCubes(r, game.spawner.cubes, camX, camZ, view.glow || 0, scene, lite, g);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, r.horizonY, w, time - view.ringAt);
+  const ps = view.particles;
+  if (ps) drawParticles(g, ps, true); // dust and embers go behind the cubes
+  drawCubes(r, game.spawner.cubes, camX, camZ, view.glow || 0, scene, lite, g, view.hideCube);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.hitboxes) drawHitboxes(r, game, camX, camZ);
 
   // Ship and HUD effects are not tilted by the bank.
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
   if (view.level) drawRain(ctx, r.scenery, view, w, h);
-  if (view.showShip !== false) drawShip(r, p, view, game);
+  if (!lite) drawSpeedLines(ctx, w, h, r.cx, r.horizonY, game.boost || 0, time);
+  if (zoom !== 1) {
+    ctx.translate(r.cx, pivotY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-r.cx, -pivotY);
+  }
+  if (view.showShip !== false) drawShip(r, p, view, game, g);
+  if (ps) drawParticles(g, ps, false); // sparks, shards and cube bits on top
 
   if (view.flash > 0) {
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
@@ -223,7 +245,7 @@ function drawGrid(r, p, camX, camZ) {
 
 const SHADOW_MIN_PX = 12; // cubes narrower than this on screen get no shadow or reflection
 
-function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g) {
+function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
   const { ctx, f, cx, horizonY, w, visible } = r;
   const cfg = r.config;
   const camH = cfg.cameraHeight;
@@ -240,6 +262,7 @@ function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g) {
   visible.length = 0;
   for (let i = 0; i < cubes.length; i++) {
     const c = cubes[i];
+    if (c === hidden) continue; // the cube that was hit has burst into bits
     const near = c.z - camZ - c.size / 2;
     if (near < 0.5 || near >= cfg.fogDistance) continue;
     const rx = c.x - camX;
@@ -415,7 +438,7 @@ function updateShipColors(r, ship) {
   r.shipGlowSprite = glowSprite('#ffffff', r.shipGlow, 0.35);
 }
 
-function drawShip(r, p, view, game) {
+function drawShip(r, p, view, game, g) {
   const { ctx } = r;
   const cfg = r.config;
   const zc = cfg.cameraBack;
@@ -450,31 +473,25 @@ function drawShip(r, p, view, game) {
   ctx.ellipse(Q.x, Q.y, shadowW, shadowW * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Light trails straight out behind the engines (longer when faster).
-  const speed = game.speed || 0;
-  const trail = 0.22 + speed * 0.007;
+  // Engine trails: glowing ribbons that follow where the ship has been, so
+  // they curve when you steer. Longer and brighter when boosting. Thin white
+  // streaks come off the wingtips in hard turns.
   const boost = game.boost || 0;
+  const trail = view.trail;
   ctx.globalCompositeOperation = 'lighter';
-  for (const k of ENGINES) {
-    const t = T[k];
-    const z0 = zc + t.z;
-    project(r, t.x - syw * trail, HOVER + t.y, z0 - cyw * trail, Q);
-    const w = (0.05 * r.f) / z0;
-    // Two overlapping tapers (a long faint one and a short bright one) fade
-    // the trail out without building a gradient every frame.
-    ctx.fillStyle = r.shipGlow;
-    ctx.globalAlpha = 0.22 + 0.18 * boost;
-    ctx.beginPath();
-    ctx.moveTo(t.sx - w, t.sy);
-    ctx.lineTo(t.sx + w, t.sy);
-    ctx.lineTo(Q.x, Q.y);
-    ctx.fill();
-    ctx.globalAlpha = 0.3 + 0.2 * boost;
-    ctx.beginPath();
-    ctx.moveTo(t.sx - w, t.sy);
-    ctx.lineTo(t.sx + w, t.sy);
-    ctx.lineTo((t.sx + Q.x) / 2, (t.sy + Q.y) / 2);
-    ctx.fill();
+  if (trail && g) {
+    const reach = 0.7 + 0.5 * boost;
+    for (let n = 0; n < 2; n++) {
+      const t = T[ENGINES[n]];
+      drawTrailRibbon(g, trail, t.sx, t.sy, t.x, HOVER + t.y, t.z, reach, 0.13 + 0.05 * boost, r.shipGlow, 0.5 + 0.3 * boost);
+    }
+    const hard = Math.min(1, Math.max(0, Math.abs(game.leanLook || 0) - 0.5) * 2);
+    if (hard > 0) {
+      for (let n = 0; n < 2; n++) {
+        const t = T[TIPS[n]];
+        drawTrailLine(g, trail, t.sx, t.sy, t.x, HOVER + t.y, t.z, 0.9, 0.6 * hard);
+      }
+    }
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
@@ -542,12 +559,14 @@ function drawShip(r, p, view, game) {
   ctx.lineTo((T.c4.sx * 2 + T.c3.sx) / 3, (T.c4.sy * 2 + T.c3.sy) / 3);
   ctx.stroke();
 
-  // Engine glow (a gentle flicker, bigger when boosting) and wingtip lights.
+  // Engine glow (a gentle flicker) and wingtip lights. When boosting, the
+  // glow stretches back into a flame.
   const flicker = 0.85 + 0.15 * Math.sin(performance.now() / 45);
   ctx.globalCompositeOperation = 'lighter';
-  for (const k of ENGINES) {
-    const t = T[k];
+  for (let n = 0; n < 2; n++) {
+    const t = T[ENGINES[n]];
     const rad = ((0.09 * r.f) / (zc + t.z)) * flicker * (1 + 0.3 * boost);
+    if (boost > 0.02) drawGlowOval(ctx, r.shipGlowSprite, t.sx, t.sy + rad * 1.5 * boost, rad * (1 - 0.25 * boost), rad * (1 + 2.4 * boost));
     drawGlow(ctx, r.shipGlowSprite, t.sx, t.sy, rad);
   }
   ctx.globalCompositeOperation = 'source-over';

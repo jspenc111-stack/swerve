@@ -207,11 +207,16 @@ export const CONFIG = {
   tiltDeadZoneDeg: 2.5,     // small tilts are ignored so the ship doesn't drift
   dragRangePx: 80,          // dragging this far from where you touched = full steering (the centre follows your thumb at this distance)
 
+  // ---- Near misses (look and sound only: no score, speed or hitbox change) --
+  nearMissDistance: 0.45,   // passing an obstacle with less room than this fires sparks and a whoosh (Classic, 3D Flight)
+
   // ---- Crash and effects -------------------------------------------------
   crashFlashMs: 160,
   crashShakeMs: 250,
   crashShakePx: 12,
   gameOverDelayMs: 600,
+  crashSlowMoMs: 150,       // the last part of the crash plays in slow motion (look only; skipped with "reduce motion")
+  boostZoom: 0.04,          // the view widens this much while boosting (look only; off on Lite)
   vibrateMs: 60,
 };
 

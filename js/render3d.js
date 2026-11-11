@@ -13,6 +13,9 @@ import {
   drawSpeedStreaks, drawWaterGlints, drawRainSplashes, drawNeonGrid, drawGroundShadow,
 } from './groundFx.js';
 import { luminance, cubeVariant } from './render.js';
+import {
+  drawParticles, drawTrailRibbon, drawTrailLine, drawShockwave, drawSpeedLines, drawLevelRing,
+} from './fx.js';
 
 const FOG_STEPS = 24;
 const SHADE_STEPS = 24;
@@ -98,15 +101,23 @@ export function drawFlightFrame(r, s, f, view) {
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
   const angle = (view.bank || 0) + (view.roll || 0);
   const pivotY = h * 0.6;
+  // The boost zoom (look only): the whole picture shrinks a touch, world and jet alike.
+  const zoom = view.zoom || 1;
   ctx.translate(r.cx, pivotY);
   ctx.rotate(angle);
+  if (zoom !== 1) ctx.scale(zoom, zoom);
   ctx.translate(-r.cx, -pivotY);
 
   const scene = sceneOf(view.level);
+  const time = view.time || 0;
+  const ps = view.particles;
   drawSkyAndGround(r, s, p, cam, view, scene);
   const g = drawGroundLayer(r, s, p, cam, view, scene, f.speed || 0, f.boost || 0);
-  drawShadow(r, f, cam);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, cam.hY, w, time - view.ringAt);
+  if (ps) drawParticles(g, ps, true);
+  if (view.showShip !== false) drawShadow(r, f, cam);
   drawWorld(r, s, f, cam, view.glow || 0, scene, g);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.hitboxes) drawHitbox(r, f, cam);
   drawBullets(r, f, cam);
   drawFx(r, f, cam, false);
@@ -115,7 +126,14 @@ export function drawFlightFrame(r, s, f, view) {
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
   if (view.level) drawRain(ctx, r.scenery, view, w, h);
-  if (view.showShip !== false) drawJet(r, s, p, f, cam);
+  if (!view.lite) drawSpeedLines(ctx, w, h, r.cx, cam.hY, f.boost || 0, time);
+  if (zoom !== 1) {
+    ctx.translate(r.cx, pivotY);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-r.cx, -pivotY);
+  }
+  if (view.showShip !== false) drawJet(r, s, p, f, cam, view.trail);
+  if (ps) drawParticles(g, ps, false);
   drawFx(r, f, cam, true); // floating "+50" text on top
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
@@ -623,15 +641,23 @@ export function drawChopperFrame(r, s, c, look, view) {
   ctx.translate(-r.cx, -pivotY);
 
   const scene = sceneOf(view.level);
+  const time = view.time || 0;
+  const ps = view.particles;
   drawSkyAndGround(r, s, p, cam, view, scene);
   const g = drawGroundLayer(r, s, p, cam, view, scene, c.speed || 0, 0);
+  if (view.ringAt >= 0) drawLevelRing(ctx, r.cx, cam.hY, w, time - view.ringAt);
   drawHelipad(r, cam, c.padZ);
-  drawDownwash(r, cam, c, look);
-  drawShadow(r, c, cam, cfg.chopperLength * 0.7);
+  if (ps) drawParticles(g, ps, true);
+  if (view.showShip !== false) {
+    drawDownwash(r, cam, c, look);
+    drawShadow(r, c, cam, cfg.chopperLength * 0.7);
+  }
   drawWorld(r, s, c, cam, view.glow || 0, scene, g);
+  if (view.shockAt >= 0) drawShockwave(g, view.shockX, view.shockZ, time - view.shockAt);
   if (view.path) drawPath(r, c, cam);
   if (view.hitboxes) { drawHitbox(r, c, cam, c.hitbox); drawHitbox(r, c, cam, c.rotorBox); }
   if (view.showShip !== false) drawChopperModel(r, s, cam, c, look, p);
+  if (ps) drawParticles(g, ps, false);
   if (view.level) {
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
     drawRain(ctx, r.scenery, view, w, h);
@@ -771,7 +797,7 @@ function jetSprites() {
   navGreen = glowSprite('rgba(60,255,110,1)', 'rgba(60,255,110,0.6)', 0.4);
   navWhite = glowSprite('rgba(255,255,255,1)', 'rgba(255,255,255,0.6)', 0.4);
 }
-function drawJet(r, s, p, f, cam) {
+function drawJet(r, s, p, f, cam, trail) {
   const { ctx, config: cfg } = r;
   const mats = jetMaterials(s, p.ship);
   const DEG = Math.PI / 180;
@@ -861,6 +887,23 @@ function drawJet(r, s, p, f, cam) {
   ctx.lineTo((a.x + b.x) / 2, (a.y + b.y) / 2);
   ctx.fill();
   ctx.globalAlpha = 1;
+
+  // The engine trail: a glowing ribbon that follows where the jet has been,
+  // so it curves when you steer (longer and brighter when boosting), plus
+  // thin white streaks off the wingtips in hard turns.
+  if (trail) {
+    const g = geometry(r, cam);
+    g.camH = cam.y; // the exact camera height (the ribbon is in the air)
+    drawTrailRibbon(g, trail, a.x, a.y, e0.x, e0.y, e0.z, 1.0 + 0.6 * boost, 0.16 + 0.06 * boost,
+      boost > 0.3 ? '#a8d4ff' : '#ffc68a', 0.3 + 0.3 * boost);
+    const hard = Math.min(1, Math.max(0, Math.abs(roll) / (cfg.flightRollDeg * DEG) - 0.5) * 2);
+    if (hard > 0) {
+      const tl = T[TIP_L], tr = T[TIP_R];
+      drawTrailLine(g, trail, tl.sx, tl.sy, tl.x, tl.y, tl.z, 1.3, 0.55 * hard);
+      drawTrailLine(g, trail, tr.sx, tr.sy, tr.x, tr.y, tr.z, 1.3, 0.55 * hard);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+  }
 
   // Navigation lights: red on the left wingtip, green on the right, and a
   // white strobe that blinks now and then.

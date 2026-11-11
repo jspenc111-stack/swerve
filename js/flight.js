@@ -114,7 +114,9 @@ export function approach(v, input, max, accel, friction, dt, reverseBoost = 1) {
 // firing: auto-fire on (true) or off. feel: a Steering feel preset (see
 // flightFeelPreset; default: the default preset) for acceleration and boost.
 // Returns this frame's events: { type: 'level' | 'crash' | 'ring' | 'shot' |
-// 'hit' | 'destroy' } ('destroy' also has `points` and `big`).
+// 'hit' | 'destroy' | 'nearMiss' } ('destroy' also has `points` and `big`;
+// 'nearMiss' has `side`: -1 left, 1 right, 0 above or below). A near miss is
+// look and sound only.
 export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = false, feel = null) {
   const cfg = f.config;
   const events = f.events;
@@ -202,8 +204,30 @@ export function stepFlight(f, dt, steerX, steerY, boosting = false, firing = fal
   if (!f.invincible && (findBoxCollision(f.hitbox, f.spawner.boxes) || hitsTarget(f))) {
     f.crashed = true;
     events.push(CRASH_EVENT);
+    return events;
   }
+  nearMisses(f, before, events);
   return events;
+}
+
+// Near misses: a block whose middle went past the jet this frame with less
+// than nearMissDistance of room around the hitbox (sideways, above or below)
+// and no overlap. Each block passes the jet once, so each fires at most once.
+function nearMisses(f, before, events) {
+  const limit = f.config.nearMissDistance;
+  if (!(limit > 0)) return;
+  const boxes = f.spawner.boxes;
+  const hb = f.hitbox;
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];
+    if (b.z <= before || b.z > f.distance) continue;
+    const gx = Math.abs(b.x - f.x) - b.w / 2 - hb.halfW;                     // room sideways
+    const gy = Math.max(b.y - (f.y + hb.halfH), f.y - hb.halfH - (b.y + b.h)); // room above/below
+    if (gx < 0 && gy < 0) continue; // overlapping (only possible when invincible): not a miss
+    const room = gx >= 0 && gy >= 0 ? Math.hypot(gx, gy) : Math.max(gx, gy);
+    if (room >= limit) continue;
+    events.push(gx < 0 ? NEAR_MID : b.x < f.x ? NEAR_LEFT : NEAR_RIGHT);
+  }
 }
 
 // ---- Shooting --------------------------------------------------------------
@@ -392,3 +416,6 @@ const CRASH_EVENT = Object.freeze({ type: 'crash' });
 const RING_EVENT = Object.freeze({ type: 'ring' });
 const SHOT_EVENT = Object.freeze({ type: 'shot' });
 const HIT_EVENT = Object.freeze({ type: 'hit' });
+const NEAR_LEFT = Object.freeze({ type: 'nearMiss', side: -1 });
+const NEAR_RIGHT = Object.freeze({ type: 'nearMiss', side: 1 });
+const NEAR_MID = Object.freeze({ type: 'nearMiss', side: 0 });

@@ -21,6 +21,8 @@ export function createHeliRenderer() {
     parts: [],     // crash bits and gem sparkles { x, y, vx, vy, life, maxLife, color, size, gravity }
     pops: [],      // floating "+25" text { x, y, life }
     smokeDebt: 0,
+    shockAge: -1,  // seconds since the crash shockwave started (-1 = none)
+    shockX: 0, shockY: 0,
     rotor: 0,      // main rotor angle
     tailRotor: 0,
     shadeKey: '',
@@ -93,13 +95,19 @@ export function updateHeliFx(hr, heli, cfg, dt, holding, flying) {
     hr.pops[w++] = p;
   }
   hr.pops.length = w;
+  if (hr.shockAge >= 0) {
+    hr.shockAge += dt;
+    if (hr.shockAge > SHOCK_SEC) hr.shockAge = -1;
+  }
 }
+const SHOCK_SEC = 0.5;
 
 export function clearHeliFx(hr) {
   hr.smoke.length = 0;
   hr.parts.length = 0;
   hr.pops.length = 0;
   hr.smokeDebt = 0;
+  hr.shockAge = -1;
 }
 
 const EXHAUST_PT = { x: 0, y: 0 };
@@ -116,6 +124,10 @@ function exhaustPoint(heli, cfg) {
 
 // A crash: bits in the ship color and orange, plus a puff of smoke.
 export function heliCrashBurst(hr, heli, shipColor) {
+  // A bright ring bursts out from the crash.
+  hr.shockAge = 0;
+  hr.shockX = heli.distance;
+  hr.shockY = heli.y;
   for (let i = 0; i < 34; i++) {
     const a = Math.random() * TAU;
     const sp = 2 + Math.random() * 7;
@@ -199,6 +211,7 @@ export function drawHeliFrame(r, hr, heli, view) {
   drawSmoke(r, hr);
   if (view.showShip !== false && !heli.crashed) drawHeli(r, hr, p, heli, view);
   drawParts(r, hr);
+  if (hr.shockAge >= 0) drawShock(r, hr);
   if (view.hitboxes) drawDebug(r, hr, heli);
 
   if (view.flash > 0) {
@@ -427,6 +440,24 @@ function drawGems(r, hr, gems, time) {
     ctx.fill();
     ctx.globalAlpha = 1;
   }
+}
+
+// The crash shockwave: a ring that spreads out and fades.
+function drawShock(r, hr) {
+  const { ctx } = r;
+  const t = hr.shockAge / SHOCK_SEC;
+  const rad = (0.5 + 5.5 * (1 - (1 - t) * (1 - t))) * hr.scale;
+  const x = sx(hr, hr.shockX), y = sy(hr, hr.shockY);
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 0.75 * (1 - t);
+  ctx.lineWidth = Math.max(1.5, (1 - t) * 0.25 * hr.scale);
+  ctx.beginPath();
+  ctx.arc(x, y, rad, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = 0.28 * (1 - t);
+  ctx.lineWidth = Math.max(3, (1 - t) * 0.7 * hr.scale);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function drawSmoke(r, hr) {

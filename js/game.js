@@ -41,6 +41,7 @@ export function resetGame(game, seed = game.seed + 1, startLevel = 0) {
   game.levelTime = 0;
   game.boost = 0; // 0 = normal speed … 1 = full boost (eases in and out)
   game.crashed = false;
+  game.hitCube = null; // the cube that was hit (for the crash effect; look only)
   game.events.length = 0;
   levelForDistance(start, cfg, game.levels, game.info);
   game.levelIndex = game.info.absIndex; // absolute level index (counts across laps)
@@ -61,7 +62,10 @@ export function capFrameTime(dt, config) {
 // Advance the game by dt seconds.
 //   steer: -1 (full left) … 1 (full right)
 //   boosting: true while the speed-up button is held
-// Returns a list of events for this frame: { type: 'level' } or { type: 'crash' }.
+// Returns a list of events for this frame: { type: 'level' }, { type: 'crash' }
+// or { type: 'nearMiss', side } (side: -1 = the cube passed on the left, 1 =
+// on the right). A near miss is look and sound only: it never changes the
+// score, the speed or the hitbox.
 export function stepGame(game, dt, steer, boosting = false) {
   const cfg = game.config;
   const events = game.events;
@@ -99,6 +103,7 @@ export function stepGame(game, dt, steer, boosting = false) {
   game.levelTime += dt;
   game.baseSpeed = classicBaseSpeed(game.info, cfg) + cfg.speedRampPerSecond * game.levelTime;
   game.speed = game.baseSpeed * (1 + (cfg.boostMultiplier - 1) * game.boost);
+  const before = game.distance;
   game.distance += game.speed * dt;
 
   // Score only ever goes up, and counts only this run's distance.
@@ -121,11 +126,31 @@ export function stepGame(game, dt, steer, boosting = false) {
   updateSpawner(game.spawner, game.distance, game.x, game.baseSpeed * cfg.boostMultiplier);
 
   shipHitbox(game.x, game.distance, cfg, game.hitbox);
-  if (!game.invincible && findCollision(game.hitbox, game.spawner.cubes)) {
+  const hit = game.invincible ? null : findCollision(game.hitbox, game.spawner.cubes);
+  if (hit) {
     game.crashed = true;
+    game.hitCube = hit;
     events.push(CRASH_EVENT);
+    return events;
   }
+  nearMisses(game, before, events);
   return events;
+}
+
+// Near misses: a cube whose middle went past the ship this frame, with less
+// than nearMissDistance of room beside the hitbox (and no overlap). Each cube
+// passes the ship once, so each fires at most once.
+function nearMisses(game, before, events) {
+  const limit = game.config.nearMissDistance;
+  if (!(limit > 0)) return;
+  const cubes = game.spawner.cubes;
+  const hb = game.hitbox;
+  for (let i = 0; i < cubes.length; i++) {
+    const c = cubes[i];
+    if (c.z <= before || c.z > game.distance) continue;
+    const room = Math.abs(c.x - game.x) - c.size / 2 - hb.halfW;
+    if (room >= 0 && room < limit) events.push(c.x < game.x ? NEAR_LEFT : NEAR_RIGHT);
+  }
 }
 
 // Debug helper: jump straight to the start of a level (0-based absolute index).
@@ -159,3 +184,5 @@ export function classicBaseSpeed(info, cfg) {
 
 const LEVEL_EVENT = Object.freeze({ type: 'level' });
 const CRASH_EVENT = Object.freeze({ type: 'crash' });
+const NEAR_LEFT = Object.freeze({ type: 'nearMiss', side: -1 });
+const NEAR_RIGHT = Object.freeze({ type: 'nearMiss', side: 1 });

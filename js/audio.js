@@ -99,6 +99,18 @@ export function playNewBest() {
   } catch { /* ignore */ }
 }
 
+// A quick airy "whoosh" for a near miss (kept soft: it can repeat quickly).
+let lastWhoosh = 0;
+export function playWhoosh() {
+  if (!ready()) return;
+  try {
+    const t = ctx.currentTime;
+    if (t - lastWhoosh < 0.12) return; // several cubes at once make one whoosh
+    lastWhoosh = t;
+    noiseBurst(t, 0.16, 'bandpass', 2600, 700, 0.16);
+  } catch { /* ignore */ }
+}
+
 // Short buzz, if the phone supports it and vibration is on.
 export function vibrate(ms, on) {
   if (!on) return;

@@ -20,7 +20,12 @@ import {
   createHeliRenderer, drawHeliFrame, heliVisibleRange, updateHeliFx, clearHeliFx,
   heliCrashBurst, heliGemSparkle,
 } from './renderHeli.js';
-import { blendPalette, copyPalette, bannerText, hudLabel } from './levels.js';
+import { blendPalette, copyPalette, bannerText, hudLabel, mixColor } from './levels.js';
+import {
+  createParticles, spawn, update as updateParticles, clearParticles, setParticleLimit, KIND,
+  PARTICLE_CAP_FULL, PARTICLE_CAP_LITE, createTrail, pushTrail, clearTrail,
+} from './particles.js';
+import { sceneOf } from './scenery.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
   createInput, getSteer, getFlightSteer, getBoost, bindBoostButton, clearInput, setControlMode,
@@ -34,7 +39,7 @@ import {
 import { createQuality, updateQuality, qualityScale, resetQualityRun, pauseQuality } from './quality.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
-  playShot, playHit, playBoom, playGem, setRotorHum, playLand, setChopperRotor,
+  playShot, playHit, playBoom, playGem, setRotorHum, playLand, setChopperRotor, playWhoosh,
 } from './audio.js';
 
 const DEG = Math.PI / 180;
@@ -133,7 +138,128 @@ const view = {
   // hard you're steering (the sky shifts a little), and the lightning bolt.
   level: LEVELS[0], prevLevel: null, fade: 1, time: 0, steer: 0, lite: false,
   boltAt: -1, boltSeed: 1,
+  // Effects (look only): the pooled particles and the ship's trail, the boost
+  // zoom, the crash shockwave, the level-change ring, the cube that was hit.
+  particles: null, trail: null, zoom: 1,
+  shockAt: -1, shockX: 0, shockZ: 0, ringAt: -1, hideCube: null,
 };
+const particles = createParticles(PARTICLE_CAP_FULL);
+const trail = createTrail(40);
+view.particles = particles;
+view.trail = trail;
+
+// ---- Effects (look and sound only: they never change scores, speeds or hitboxes) ----
+
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function clearEffects() {
+  clearParticles(particles);
+  clearTrail(trail);
+  view.shockAt = -1;
+  view.ringAt = -1;
+  view.hideCube = null;
+  view.zoom = 1;
+}
+
+// Where the craft is, for effects: Classic's ship skims the ground.
+function craftY() {
+  return gameMode === 'flight' ? flight.y : gameMode === 'chopper' ? chopper.y : 0.3;
+}
+
+// A near miss: a short burst of sparks on that side of the ship, and a whoosh.
+// side: -1 left, 1 right, 0 above or below.
+function nearMissFx(side) {
+  const g = cur();
+  const reach = gameMode === 'flight' ? CONFIG.flightShipSpan / 2 : CONFIG.shipWidth / 2;
+  const y = craftY();
+  for (let i = 0; i < 8; i++) {
+    const dir = side === 0 ? (i % 2 ? 1 : -1) : side;
+    const p = spawn(particles, KIND.spark,
+      g.x + dir * reach * rand(0.8, 1.2), y + rand(-0.05, 0.15), g.distance + rand(-0.1, 0.5),
+      dir * rand(1.5, 6), rand(0.5, 4), g.speed * rand(0.72, 0.95),
+      rand(0.22, 0.4), 0.07, i % 3 === 0 ? '#ffffff' : i % 3 === 1 ? '#ffe9a8' : shownPalette.ship);
+    if (p) p.gravity = 9;
+  }
+  playWhoosh();
+}
+
+// Flying through a ring: a ring of gold sparkles.
+function ringFx() {
+  const g = cur();
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    spawn(particles, KIND.spark, g.x + Math.cos(a) * 0.5, g.y + Math.sin(a) * 0.5, g.distance + 0.4,
+      Math.cos(a) * rand(3, 6), Math.sin(a) * rand(3, 6), g.speed * 0.9,
+      rand(0.3, 0.5), 0.08, i % 2 ? '#ffffff' : '#ffd166');
+  }
+}
+
+// A crash: the craft breaks into spinning shards in its own colours, a bright
+// ring spreads over the ground, and (Classic) the cube that was hit bursts
+// into a few smaller bits.
+function crashFx() {
+  const g = cur();
+  const y = craftY();
+  const ship = shownPalette.ship;
+  const light = mixColor(ship, '#ffffff', 0.45);
+  const dark = mixColor(ship, '#000000', 0.35);
+  const shards = 10 + Math.floor(Math.random() * 5); // 10–14
+  for (let i = 0; i < shards; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = rand(2, 7);
+    const p = spawn(particles, KIND.shard, g.x + rand(-0.2, 0.2), y + rand(0, 0.2), g.distance + rand(-0.2, 0.2),
+      Math.cos(a) * sp, rand(2, 7.5), Math.sin(a) * sp * 0.6 - 1,
+      rand(0.75, 1.15), rand(0.13, 0.24), i % 3 === 0 ? light : i % 3 === 1 ? dark : ship);
+    if (p) { p.gravity = 15; p.spin = rand(-14, 14); p.rot = a; p.ground = true; }
+  }
+  for (let i = 0; i < 10; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const p = spawn(particles, KIND.spark, g.x, y + 0.1, g.distance, Math.cos(a) * rand(4, 11), rand(1, 8), Math.sin(a) * rand(2, 6),
+      rand(0.25, 0.5), 0.08, i % 2 ? '#ffffff' : '#ffd166');
+    if (p) p.gravity = 12;
+  }
+  const cube = gameMode === 'classic' ? game.hitCube : null;
+  if (cube) {
+    view.hideCube = cube;
+    for (let i = 0; i < 7; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const p = spawn(particles, KIND.bit, cube.x + rand(-0.4, 0.4), rand(0.3, cube.size), cube.z + rand(-0.4, 0.4),
+        Math.cos(a) * rand(1.5, 5), rand(2, 7), Math.sin(a) * rand(1, 4) + 1.5,
+        rand(0.8, 1.2), rand(0.32, 0.5), i % 2 ? shownPalette.cube : mixColor(shownPalette.cube, '#000000', 0.25));
+      if (p) { p.gravity = 16; p.spin = rand(-9, 9); p.ground = true; }
+    }
+  }
+  view.shockAt = view.time;
+  view.shockX = g.x;
+  view.shockZ = g.distance;
+}
+
+// Ambient specks (dust in the Canyon, embers at Sunset): they hang in the air
+// ahead and stream past as you fly. Off on Lite.
+let ambientDebt = 0;
+let ambientKey = '';
+let ambientColor = '#ffffff';
+function spawnAmbient(dt) {
+  const kind = sceneOf(view.level).ambient;
+  if (!kind || view.lite || gameMode === 'heli') return;
+  const g = cur();
+  if (ambientKey !== view.level.name) {
+    ambientKey = view.level.name;
+    ambientColor = kind === 'embers' ? '#ffb45e' : mixColor(view.level.palette.skyHorizon, '#ffffff', 0.35);
+  }
+  const speed = Math.max(4, g.speed || 0);
+  ambientDebt += dt * (kind === 'embers' ? 0.22 : 0.75) * speed;
+  const mid = gameMode === 'classic' ? 1.6 : g.y;
+  while (ambientDebt >= 1) {
+    ambientDebt -= 1;
+    const p = spawn(particles, kind === 'embers' ? KIND.ember : KIND.dust,
+      g.x + rand(-14, 14), Math.max(0.15, mid + rand(-1.5, 3.5)), g.distance + rand(18, 60),
+      rand(-0.5, 0.5), kind === 'embers' ? rand(0.2, 0.9) : rand(-0.1, 0.1), 0,
+      rand(1.6, 2.6), kind === 'embers' ? 0.07 : 0.05, ambientColor);
+    if (p) p.rot = Math.random() * 6;
+  }
+}
+
 const chopperControlsView = { cc: input.chopper, hover: CONFIG.chopperHover, leverHeld: false, stick: null };
 
 function effectsOf(level) {
@@ -248,6 +374,12 @@ let lastLevelShown = -1;
 function updateHud() {
   const g = cur();
   if (g.score !== lastScoreShown) {
+    // A small "pop" each time the score passes another 100, and a bigger one
+    // the moment it beats your best.
+    const best = bestScoreOf(save, gameMode);
+    const beat = best > 0 && g.score > best && lastScoreShown <= best && lastScoreShown >= 0;
+    if (beat) popScore('pop-best');
+    else if (lastScoreShown >= 0 && Math.floor(g.score / 100) > Math.floor(lastScoreShown / 100)) popScore('pop');
     lastScoreShown = g.score;
     $('hud-score').textContent = gameMode === 'chopper' ? withCommas(g.score) : g.score;
   }
@@ -276,6 +408,13 @@ function updateHud() {
   }
 }
 let lastMultShown = -1;
+
+function popScore(kind) {
+  const el = $('hud-score');
+  el.classList.remove('pop', 'pop-best');
+  void el.offsetWidth; // restart the animation
+  el.classList.add(kind);
+}
 
 // 12345 → "12,345"
 function withCommas(n) {
@@ -323,6 +462,7 @@ function howto() {
 
 // Start a fresh run (or menu preview) in the selected mode at the chosen level.
 function resetCurrent() {
+  clearEffects();
   if (gameMode === 'flight') {
     resetFlight(flight, undefined, startLevelIndex());
     view.camY = flight.y + CONFIG.flightCameraAbove;
@@ -397,6 +537,7 @@ function startRun() {
   showScreen(null);
   updateHud();
   showBanner(performance.now());
+  view.ringAt = view.time; // a ring of light sweeps out as the banner appears
   keepAwake(true);
   if (gameMode === 'heli') startHeliRun();
   if (gameMode === 'chopper') startSidewaysRun();
@@ -484,6 +625,7 @@ function crash(now) {
   mode = 'crashing';
   crashAt = now;
   if (gameMode === 'heli') heliCrashBurst(heliRenderer, heli, shownPalette.ship);
+  else crashFx();
   if (gameMode === 'chopper') {
     const why = { 'hard landing': 'Hard landing!', 'rotor strike': 'Rotor strike!' }[chopper.crashReason];
     if (why) showToast(why);
@@ -862,9 +1004,11 @@ function frame(now) {
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
       if (e.type === 'crash') crash(now);
+      else if (e.type === 'nearMiss') nearMissFx(e.side);
       else if (e.type === 'land') playLand();
       else if (e.type === 'ring') {
         playRing();
+        ringFx();
         showToast(`+${CONFIG.ringBonus}`);
       } else if (e.type === 'shot') {
         playShot();
@@ -879,9 +1023,13 @@ function frame(now) {
       } else if (e.type === 'level') {
         startLevelFade(false);
         showBanner(now);
+        view.ringAt = view.time;
         playLevelUp();
       }
     }
+    // Remember where the craft has been, for the engine trail.
+    if (gameMode === 'classic') pushTrail(trail, game.x, 0, game.distance);
+    else if (gameMode === 'flight') pushTrail(trail, flight.x, flight.y, flight.distance);
     updateHud();
   } else if (mode === 'menu' && gameMode === 'heli') {
     // Menu preview: the helicopter flies itself through the chosen level.
@@ -912,9 +1060,20 @@ function frame(now) {
   }
 
   const realDt = Math.min(dt, 0.1);
-  // The scenery's clock stops while the game is paused or behind a menu page.
-  if (mode === 'playing' || mode === 'menu' || mode === 'crashing' || mode === 'over') view.time += realDt;
+  // The effects' clock stops while the game is paused or behind a menu page.
+  // The last moment of a crash plays in slow motion (look only).
+  let fxDt = mode === 'playing' || mode === 'menu' || mode === 'crashing' || mode === 'over' ? realDt : 0;
+  if (mode === 'crashing' && now - crashAt >= CONFIG.gameOverDelayMs - CONFIG.crashSlowMoMs) fxDt *= 0.3;
+  view.time += fxDt;
   view.lite = quality.lite;
+  setParticleLimit(particles, view.lite ? PARTICLE_CAP_LITE : PARTICLE_CAP_FULL);
+  if (mode === 'playing' || mode === 'menu') spawnAmbient(fxDt);
+  updateParticles(particles, fxDt);
+  // The craft is replaced by its shards once it has crashed.
+  view.showShip = !(mode === 'crashing' || mode === 'over');
+  // Boost: the view widens a little (eases in and out with the boost itself).
+  const boostNow = gameMode === 'classic' ? game.boost : gameMode === 'flight' ? flight.boost : 0;
+  view.zoom = view.lite ? 1 : 1 - CONFIG.boostZoom * boostNow;
   view.steer = gameMode === 'flight' ? flight.bankLook / CONFIG.flightRollDeg
     : gameMode === 'chopper' ? chopper.vx / CONFIG.chopperMaxSideSpeed
       : gameMode === 'classic' ? game.leanLook : 0;
