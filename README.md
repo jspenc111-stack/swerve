@@ -43,6 +43,7 @@ In every mode:
 - Since v1.5.2, Classic is about 2% faster and busier, 3D Flight steers more quickly (a smaller thumb drag gives full steering, and turning around is snappier), and 3D Flight has a taller sky to climb into.
 - Since v1.5.3, 3D Flight changes direction more quickly: the joystick ring follows your thumb when you push past it, and easing off slows the jet faster.
 - Since v1.5.4, 3D Flight gives finer control (small thumb moves are gentler and the jet no longer rocks on small corrections), with a *Steering feel* setting (Fine, Medium or Quick) in Settings and on the pause screen.
+- Since v1.6.0, Classic has more cubes rushing past close by, turning around is quicker, and every level has its own sky (sun, moon, stars, mountains, water, rain and lightning), with shaded cubes, shadows, near-miss sparks, crash and boost effects. Settings has a new *Visual effects* choice (Full or Lite).
 - In Classic the field is full from the very first second, and the clear path keeps moving away from you, so you have to keep steering: you can't just fly straight.
 - After level 8 you go round again as "Lap 2", faster.
 - Tap ⏸ to pause. The game also pauses by itself if you switch apps.

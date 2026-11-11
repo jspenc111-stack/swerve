@@ -11,7 +11,6 @@
 // A ground point (x, 0, z) lands on screen at
 //   x: cx + (x − camX) · f / (z − camZ)      y: hY + camH · f / (z − camZ)
 
-import { drawGlowOval, shadowSprite } from './sprites.js';
 
 function hash01(n) {
   const s = Math.sin(n) * 43758.5453;
@@ -175,9 +174,16 @@ export function drawGroundShadow(g, x, z, halfW, halfD, alpha) {
   const zn = rz - halfD, zf = rz + halfD;
   if (zn <= 0.4 || !(alpha > 0.01)) return;
   const kn = g.f / zn, kf = g.f / zf, k = g.f / rz;
-  const ry = Math.max(1.5, (g.camH * (kn - kf)) * 0.62);
+  const ry = Math.max(1.5, (g.camH * (kn - kf)) * 0.6);
+  const rx = halfW * 1.2 * k;
+  const sx = g.cx + (x - g.camX) * k, sy = g.hY + g.camH * k;
   const ctx = g.ctx;
-  ctx.globalAlpha = alpha;
-  drawGlowOval(ctx, shadowSprite(), g.cx + (x - g.camX) * k, g.hY + g.camH * k, halfW * 1.25 * k, ry);
+  // One faint dark oval: it reads as a soft shadow and is far cheaper to
+  // draw than a blurred picture.
+  ctx.fillStyle = '#000000';
+  ctx.globalAlpha = alpha * 0.6;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = 1;
 }

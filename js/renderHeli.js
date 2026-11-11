@@ -363,9 +363,8 @@ function drawWalls(r, hr, p, cols, pad, glow, heli) {
     for (let i = 0; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
     ctx.lineTo(pts[pts.length - 2], edge);
     ctx.closePath();
-    ctx.fillStyle = p.ground;
-    ctx.fill();
-    // Subtle horizontal rock layers (strata), from a pattern built once.
+    // The rock, with subtle horizontal layers (strata): one fill, from a
+    // pattern that is built once per level colour.
     ctx.fillStyle = strataPattern(ctx, hr, p);
     ctx.fill();
     // Soft lighter highlight just inside the edge, then the darker rim.
@@ -418,7 +417,9 @@ function strataPattern(ctx, hr, p) {
   tile.width = 8;
   tile.height = 96;
   const g = tile.getContext('2d');
-  g.clearRect(0, 0, 8, 96);
+  g.globalAlpha = 1;
+  g.fillStyle = p.ground;
+  g.fillRect(0, 0, 8, 96);
   const light = mixColor(p.ground, '#ffffff', 0.5);
   const dark = mixColor(p.ground, '#000000', 0.5);
   const bands = [[6, 5, light, 0.1], [19, 3, dark, 0.12], [31, 8, light, 0.06], [47, 4, dark, 0.1], [58, 2, light, 0.12], [70, 7, dark, 0.07], [86, 4, light, 0.08]];

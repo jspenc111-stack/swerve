@@ -10,13 +10,15 @@
 // world. Only things that move by themselves are drawn live: twinkling stars,
 // shooting stars, rain and lightning bolts.
 //
-// The layers, back to front:
-//   back        — sky colours, stars, sun or moon
-//   cloudsFar   — the far cloud layer (drifts slowly; wraps around)
-//   cloudsNear  — the near cloud layer (drifts a little faster)
-//   front       — ridges (hills, mountains, mesas, dunes, islands) and haze
-// The layers shift sideways by different amounts as you steer ("parallax"),
-// which makes the sky look deep, and they tilt with the view.
+// The pictures:
+//   back   — one solid picture with the sky colours, stars, the sun or moon,
+//            the far cloud layer, the ridges (hills, mountains, mesas, dunes,
+//            islands) and the haze
+//   clouds — the near cloud layer, on its own see-through strip, so it can
+//            drift slowly across the sky (it wraps around)
+// Keeping it to one solid picture and one strip is what keeps it fast: the
+// phone stamps two pictures instead of blending five. The sky shifts
+// sideways a little as you steer ("parallax") and tilts with the view.
 //
 // Rule: scenery must never look like something you could hit. It sits in the
 // sky or right on the horizon, in soft colours taken from the level palette.
@@ -201,15 +203,14 @@ export function boltShape(seed, out = []) {
 // ---- Drawing ----------------------------------------------------------------
 
 const WIDE = 1.8;        // the sky pictures are this many screens wide (covers tilt and parallax)
-const MAX_SHARP = 1.5;   // skies are soft, so they don't need the full screen sharpness
+const MAX_SHARP = 2;     // painted at the screen's own sharpness, so stamping it is a straight copy
 const TWINKLES = 14;
 const RAIN_MAX = 70;
 
 function makeSet() {
   return {
     key: '', level: null, W: 0, H: 0, sharp: 1,
-    back: null, cloudsFar: null, cloudsNear: null, front: null,
-    hasFar: false, hasNear: false, hasFront: false,
+    back: null, clouds: null, hasClouds: false, cloudTop: 0, cloudH: 0,
     twinkles: [], shooting: false, rain: 0, colors: {},
   };
 }
@@ -337,67 +338,66 @@ function paintSet(set, level, w, h, horizonY, skySpan, sharp) {
     g.restore();
   }
 
-  // -- clouds: one or two layers that wrap around sideways
+  // -- clouds: the far layer is painted straight onto the sky; the near layer
+  // gets its own strip (half sharpness: clouds are soft) so it can drift.
   const clouds = scene.clouds;
-  set.hasFar = false;
-  set.hasNear = false;
+  set.hasClouds = false;
   if (clouds && clouds.amount > 0) {
-    const two = clouds.layers >= 2;
-    if (two) {
-      paintClouds(canvasFor(set, 'cloudsFar', Math.ceil(pw / 2), Math.ceil(ph / 2)), W, H, sharp / 2, unit, skySpan, clouds, col.cloudFar, rnd, 0);
-      set.hasFar = true;
-    }
-    paintClouds(canvasFor(set, 'cloudsNear', Math.ceil(pw / 2), Math.ceil(ph / 2)), W, H, sharp / 2, unit, skySpan, clouds, col.cloud, rnd, 1);
-    set.hasNear = true;
+    if (clouds.layers >= 2) paintClouds(g, W, H, 0, unit, skySpan, clouds, col.cloudFar, rnd, 0);
+    // The strip only covers the part of the sky that has clouds in it.
+    const top = Math.max(0, Math.floor(H - skySpan * 1.25));
+    const stripH = H - top;
+    const c = canvasFor(set, 'clouds', Math.ceil(pw / 2), Math.ceil((stripH * sharp) / 2));
+    c.scale(sharp / 2, sharp / 2);
+    paintClouds(c, W, H, top, unit, skySpan, clouds, col.cloud, rnd, 1);
+    set.hasClouds = true;
+    set.cloudTop = top;
+    set.cloudH = stripH;
   }
 
-  // -- front: ridges and haze
-  set.hasFront = !!(scene.ridges || scene.haze);
-  if (set.hasFront) {
-    const f = canvasFor(set, 'front', pw, ph);
-    f.scale(sharp, sharp);
-    const ridges = scene.ridges;
-    if (ridges) {
-      const n = ridges.layers;
-      const seed = sceneSeed(level.name) % 97;
-      for (let i = 0; i < n; i++) {
-        const t = n === 1 ? 1 : i / (n - 1);          // 0 = farthest
-        const tall = ridges.height * unit * (1.25 - 0.45 * t);
-        const stretch = (9 + 5 * t) / w;               // nearer layers have broader shapes
-        f.fillStyle = mixColor(col.ridgeFar, col.ridgeNear, t);
-        f.beginPath();
-        f.moveTo(0, H + 1);
-        for (let x = 0; x <= W + 3; x += 3) {
-          f.lineTo(x, H - tall * ridgeHeight(ridges.style, x * stretch * (1 + i * 0.37), seed + i * 13, ridges.jagged ?? 0.5));
-        }
-        f.lineTo(W, H + 1);
-        f.closePath();
-        f.fill();
+  // -- ridges and haze, painted onto the same picture
+  const ridges = scene.ridges;
+  if (ridges) {
+    const n = ridges.layers;
+    const seed = sceneSeed(level.name) % 97;
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 1 : i / (n - 1);          // 0 = farthest
+      const tall = ridges.height * unit * (1.25 - 0.45 * t);
+      const stretch = (9 + 5 * t) / w;               // nearer layers have broader shapes
+      g.fillStyle = mixColor(col.ridgeFar, col.ridgeNear, t);
+      g.beginPath();
+      g.moveTo(0, H + 1);
+      for (let x = 0; x <= W + 3; x += 3) {
+        g.lineTo(x, H - tall * ridgeHeight(ridges.style, x * stretch * (1 + i * 0.37), seed + i * 13, ridges.jagged ?? 0.5));
       }
+      g.lineTo(W, H + 1);
+      g.closePath();
+      g.fill();
     }
-    if (scene.haze && scene.haze.strength > 0) {
-      const band = unit * 0.16;
-      const haze = f.createLinearGradient(0, H - band, 0, H);
-      haze.addColorStop(0, withAlpha(col.haze, 0));
-      haze.addColorStop(1, withAlpha(col.haze, 0.85 * scene.haze.strength));
-      f.fillStyle = haze;
-      f.fillRect(0, H - band, W, band);
-    }
+  }
+  if (scene.haze && scene.haze.strength > 0) {
+    const band = unit * 0.16;
+    const haze = g.createLinearGradient(0, H - band, 0, H);
+    haze.addColorStop(0, withAlpha(col.haze, 0));
+    haze.addColorStop(1, withAlpha(col.haze, 0.85 * scene.haze.strength));
+    g.fillStyle = haze;
+    g.fillRect(0, H - band, W, band);
   }
   set.rain = scene.rain ? scene.rain.amount : 0;
 }
 
 // Soft, flat clouds: each is a row of overlapping ovals on a flat base.
-function paintClouds(g, W, H, scale, unit, skySpan, clouds, color, rnd, layer) {
-  g.scale(scale, scale);
+// yOff: the picture's top edge, in sky coordinates (0 for the full picture).
+function paintClouds(g, W, H, yOff, unit, skySpan, clouds, color, rnd, layer) {
   const count = Math.round((clouds.dark ? 16 : 9) * clouds.amount * WIDE * (layer ? 1 : 1.3));
   const top = H - skySpan * (clouds.dark ? 1.05 : 0.95);
   const bottom = H - skySpan * (clouds.dark ? 0.1 : clouds.thin ? 0.12 : 0.22);
   g.fillStyle = color;
   for (let i = 0; i < count; i++) {
     const cx = rnd() * W;
-    const cy = top + (bottom - top) * rnd();
-    const near = (cy - top) / (bottom - top);        // lower in the sky = further away = smaller
+    const cyFull = top + (bottom - top) * rnd();
+    const cy = cyFull - yOff;
+    const near = (cyFull - top) / (bottom - top);        // lower in the sky = further away = smaller
     const size = unit * (clouds.dark ? 0.2 : clouds.puffy ? 0.11 : 0.09) * (1.25 - 0.7 * near) * (layer ? 1 : 0.7) * (0.7 + rnd() * 0.6);
     const flat = clouds.thin ? 0.16 : clouds.puffy ? 0.5 : 0.36;
     const puffs = clouds.thin ? 3 : 4 + Math.floor(rnd() * 3);
@@ -425,8 +425,23 @@ function withAlpha(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+// Fill the area around the sky picture with plain sky colour: it only shows
+// in the far corners when the view tilts. (The picture itself covers the
+// rest, so nothing is painted twice.)
+export function fillSkySurround(ctx, color, w, h, horizonY) {
+  const W = Math.ceil(w * WIDE);
+  const H = Math.ceil(horizonY + w * 0.4);
+  const x0 = (w - W) / 2;
+  const y0 = horizonY - H;
+  const lap = w * 0.05; // overlap, so the sideways shift never opens a gap
+  ctx.fillStyle = color;
+  ctx.fillRect(-w * 2, y0 - h * 2, w * 5, h * 2 + 2);                 // above
+  ctx.fillRect(-w * 2, y0, x0 + lap + w * 2, H + 1);                   // left
+  ctx.fillRect(x0 + W - lap, y0, w * 2, H + 1);                        // right
+}
+
 // Draw the sky for this frame. Call inside the tilted world transform, after
-// the plain sky fill and before the ground.
+// fillSkySurround and before the ground.
 //   geom: { w, h, horizonY, skySpan, dpr } — skySpan is how far above the
 //         horizon the sky gradient reaches (screen pixels)
 //   view: { level, prevLevel, fade (0–1), time (seconds), steer (-1 … 1, eased),
@@ -462,23 +477,21 @@ function stampSet(ctx, set, alpha, steer, time, w, horizonY) {
   const y0 = horizonY - set.H;
   const prevAlpha = ctx.globalAlpha;
   ctx.globalAlpha = alpha;
-  ctx.drawImage(set.back, x0 - steer * w * 0.012, y0, set.W, set.H);
-  if (set.hasFar) stampWrapped(ctx, set.cloudsFar, set, x0, y0, time * 2.2 - steer * w * 0.02);
-  if (set.hasNear) stampWrapped(ctx, set.cloudsNear, set, x0, y0, time * 4.5 - steer * w * 0.03);
-  if (set.hasFront) ctx.drawImage(set.front, x0 - steer * w * 0.045, y0, set.W, set.H);
+  const shift = -steer * w * 0.03;
+  ctx.drawImage(set.back, x0 + shift, y0, set.W, set.H);
+  if (set.hasClouds) {
+    // The near clouds drift sideways forever: stamp the strip twice, side by side.
+    let s = (time * 4 + shift * 1.5) % set.W;
+    if (s < 0) s += set.W;
+    const y = y0 + set.cloudTop;
+    ctx.drawImage(set.clouds, x0 + s - set.W, y, set.W, set.cloudH);
+    ctx.drawImage(set.clouds, x0 + s, y, set.W, set.cloudH);
+  }
   ctx.globalAlpha = prevAlpha;
 }
 
-// A layer that scrolls sideways forever: stamp it twice, side by side.
-function stampWrapped(ctx, img, set, x0, y0, shift) {
-  let s = shift % set.W;
-  if (s < 0) s += set.W;
-  ctx.drawImage(img, x0 + s - set.W, y0, set.W, set.H);
-  ctx.drawImage(img, x0 + s, y0, set.W, set.H);
-}
-
 function drawTwinkles(ctx, set, time, steer, w, horizonY) {
-  const x0 = (w - set.W) / 2 - steer * w * 0.012;
+  const x0 = (w - set.W) / 2 - steer * w * 0.03;
   const y0 = horizonY - set.H;
   ctx.fillStyle = '#ffffff';
   for (let i = 0; i < set.twinkles.length; i++) {

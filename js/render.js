@@ -7,8 +7,8 @@
 // so far-away things are smaller and closer to the horizon.
 
 import { mixColor } from './levels.js';
-import { glowSprite, drawGlow, drawGlowOval, faceShadeSprite } from './sprites.js';
-import { createScenery, drawSky, drawRain, sceneOf, sceneLight } from './scenery.js';
+import { glowSprite, drawGlow, drawGlowOval } from './sprites.js';
+import { createScenery, drawSky, drawRain, sceneOf, sceneLight, fillSkySurround } from './scenery.js';
 import {
   drawSpeedStreaks, drawWaterGlints, drawWake, drawRainSplashes, drawNeonGrid, drawGroundShadow,
 } from './groundFx.js';
@@ -27,7 +27,7 @@ export function createRenderer(canvas, config) {
     w: 1, h: 1, dpr: 1, f: 1, cx: 0, horizonY: 0,
     visible: [],
     paletteKey: '',
-    shadeSets: [0, 1, 2].map(() => ({ front: [], top: [], side: [], edge: [] })),
+    shadeSets: [0, 1, 2].map(() => ({ front: [], frontHi: [], frontLo: [], top: [], side: [], edge: [], rim: [] })),
     shades: null,
     scenery: createScenery(),
     gradKey: '',
@@ -71,13 +71,20 @@ function updateShades(r, p) {
     const top = mixColor(base, '#ffffff', 0.28);
     const side = mixColor(base, '#000000', 0.3);
     const edge = mixColor(base, '#ffffff', 0.65);
+    // The front face's gentle gradient is three flat bands (lighter at the
+    // top, darker at the bottom), in colours worked out here once.
+    const hi = mixColor(base, '#ffffff', 0.1);
+    const lo = mixColor(base, '#000000', 0.09);
     const set = r.shadeSets[v];
     for (let i = 0; i < FOG_STEPS; i++) {
       const t = i / (FOG_STEPS - 1);
       set.front[i] = mixColor(base, p.skyHorizon, t);
+      set.frontHi[i] = mixColor(hi, p.skyHorizon, t);
+      set.frontLo[i] = mixColor(lo, p.skyHorizon, t);
       set.top[i] = mixColor(top, p.skyHorizon, t);
       set.side[i] = mixColor(side, p.skyHorizon, t);
       set.edge[i] = mixColor(edge, p.skyHorizon, t);
+      set.rim[i] = mixColor(mixColor(hi, edge, 0.7), p.skyHorizon, t); // the top-edge highlight
     }
   }
   r.shades = r.shadeSets[1];
@@ -198,8 +205,13 @@ function drawSkyAndGround(r, p, view, scene) {
   // Oversized so the corners stay covered when the view is tilted.
   const left = -w;
   const width = w * 3;
-  ctx.fillStyle = r.skyGrad;
-  ctx.fillRect(left, horizonY - h * 2, width, h * 2 + 1);
+  // Behind the sky picture: plain sky colour (it only shows in the far
+  // corners when the view tilts). Without a level, the old plain gradient.
+  if (view.level) fillSkySurround(ctx, p.sky, w, h, horizonY);
+  else {
+    ctx.fillStyle = r.skyGrad;
+    ctx.fillRect(left, horizonY - h * 2, width, h * 2 + 1);
+  }
   // The level's sky scene (painted once, stamped here every frame).
   if (view.level) {
     SKY.w = w; SKY.h = h; SKY.horizonY = horizonY; SKY.skySpan = h * 0.6; SKY.dpr = r.dpr;
@@ -243,7 +255,8 @@ function drawGrid(r, p, camX, camZ) {
   ctx.globalAlpha = 1;
 }
 
-const SHADOW_MIN_PX = 12; // cubes narrower than this on screen get no shadow or reflection
+const SHADOW_MAX = 40;    // at most this many shadows a frame (the nearest cubes)
+const SHADOW_MIN_PX = 14; // cubes narrower than this on screen get no shadow, shading bands or reflection
 
 function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
   const { ctx, f, cx, horizonY, w, visible } = r;
@@ -251,7 +264,6 @@ function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
   const camH = cfg.cameraHeight;
   const fogStart = cfg.fogStart;
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
-  const shade = faceShadeSprite();
   // Shadows fall away from the level's sun or moon.
   const shadowShift = -sceneLight(scene) * 0.45;
   const reflect = !lite && (scene.ground === 'water' || scene.ground === 'wet');
@@ -308,7 +320,8 @@ function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
 
     // Ground contact: a soft shadow under the cube, leaning away from the
     // light. On glow levels (Night) it's a soft pool of light instead.
-    if (big) {
+    // Only the nearest cubes get one (far ones are too small to notice).
+    if (big && i >= visible.length - SHADOW_MAX) {
       if (glow > 0.5) {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.38 * glow * clear;
@@ -342,15 +355,21 @@ function drawCubes(r, cubes, camX, camZ, glow, scene, lite, g, hidden) {
     }
     // Front face, with a gentle top-to-bottom gradient (lighter at the top)
     // and a thin bright highlight along its top edge.
-    ctx.fillStyle = shades.front[fi];
-    ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
-    if (big) {
-      ctx.globalAlpha = clear;
-      ctx.drawImage(shade, x1, yTop, x2 - x1, yBot - yTop);
-      ctx.globalAlpha = 0.75 * clear;
-      ctx.fillStyle = shades.edge[fi];
+    if (!big) {
+      ctx.fillStyle = shades.front[fi];
+      ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+    } else {
+      // Three flat bands, each painted once (nothing is painted over).
+      const fh = yBot - yTop;
+      const yA = yTop + fh * 0.36, yB = yBot - fh * 0.28;
+      ctx.fillStyle = shades.frontHi[fi];
+      ctx.fillRect(x1, yTop, x2 - x1, yA - yTop);
+      ctx.fillStyle = shades.front[fi];
+      ctx.fillRect(x1, yA, x2 - x1, yB - yA);
+      ctx.fillStyle = shades.frontLo[fi];
+      ctx.fillRect(x1, yB, x2 - x1, yBot - yB);
+      ctx.fillStyle = shades.rim[fi];
       ctx.fillRect(x1, yTop, x2 - x1, Math.max(1, 0.035 * kn));
-      ctx.globalAlpha = 1;
       // Water and wet ground: a faint, short mirror image under the cube.
       if (reflect) {
         const rh = (yBot - yTop) * 0.4;

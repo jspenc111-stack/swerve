@@ -7,8 +7,8 @@
 
 import { mixColor } from './levels.js';
 import { drawChopperModel, drawHelipad, drawDownwash } from './chopperModel.js';
-import { glowSprite, drawGlow, drawGlowOval, faceShadeSprite } from './sprites.js';
-import { drawSky, drawRain, sceneOf, sceneLight } from './scenery.js';
+import { glowSprite, drawGlow, drawGlowOval } from './sprites.js';
+import { drawSky, drawRain, sceneOf, sceneLight, fillSkySurround } from './scenery.js';
 import {
   drawSpeedStreaks, drawWaterGlints, drawRainSplashes, drawNeonGrid, drawGroundShadow,
 } from './groundFx.js';
@@ -26,7 +26,7 @@ export function createFlightRenderer() {
     items: [],
     paletteKey: '',
     // Three brightness sets (a touch darker, normal, a touch lighter), like Classic.
-    shadeSets: [0, 1, 2].map(() => ({ front: [], top: [], bottom: [], side: [], edge: [] })),
+    shadeSets: [0, 1, 2].map(() => ({ front: [], frontHi: [], frontLo: [], top: [], bottom: [], side: [], edge: [], rim: [] })),
     gradKey: '',
     skyGrad: null,
     groundGrad: null,
@@ -47,14 +47,19 @@ function updateShades(s, p) {
     const bottom = mixColor(base, '#000000', 0.42);
     const side = mixColor(base, '#000000', 0.25);
     const edge = mixColor(base, '#ffffff', 0.65);
+    const hi = mixColor(base, '#ffffff', 0.1);
+    const lo = mixColor(base, '#000000', 0.09);
     const set = s.shadeSets[v];
     for (let i = 0; i < FOG_STEPS; i++) {
       const t = i / (FOG_STEPS - 1);
       set.front[i] = mixColor(base, p.skyHorizon, t);
+      set.frontHi[i] = mixColor(hi, p.skyHorizon, t);
+      set.frontLo[i] = mixColor(lo, p.skyHorizon, t);
       set.top[i] = mixColor(top, p.skyHorizon, t);
       set.bottom[i] = mixColor(bottom, p.skyHorizon, t);
       set.side[i] = mixColor(side, p.skyHorizon, t);
       set.edge[i] = mixColor(edge, p.skyHorizon, t);
+      set.rim[i] = mixColor(mixColor(hi, edge, 0.7), p.skyHorizon, t); // the top-edge highlight
     }
   }
   const dark = luminance(p.ground) < 0.45;
@@ -171,8 +176,13 @@ function drawSkyAndGround(r, s, p, cam, view, scene) {
     s.groundGrad.addColorStop(0.3 + 0.1 * hazy, p.ground);
     s.groundGrad.addColorStop(1, p.ground);
   }
-  ctx.fillStyle = s.skyGrad;
-  ctx.fillRect(-w, hY - h * 2, w * 3, h * 2 + 1);
+  // Behind the sky picture: plain sky colour (only seen in the far corners
+  // when the view tilts). Without a level, the old plain gradient.
+  if (view.level) fillSkySurround(ctx, p.sky, w, h, hY);
+  else {
+    ctx.fillStyle = s.skyGrad;
+    ctx.fillRect(-w, hY - h * 2, w * 3, h * 2 + 1);
+  }
   // The level's sky scene (painted once, stamped here every frame).
   if (view.level) {
     SKY.w = w; SKY.h = h; SKY.horizonY = hY; SKY.skySpan = h * 0.65; SKY.dpr = r.dpr;
@@ -344,17 +354,23 @@ function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
     ctx.moveTo(x1, yBot); ctx.lineTo(x2, yBot); ctx.lineTo(bx2, byBot); ctx.lineTo(bx1, byBot);
     ctx.fill();
   }
-  ctx.fillStyle = sh.front[fi];
-  ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
-  // The front gets a gentle top-to-bottom gradient (lighter at the top) and a
-  // thin bright highlight along its top edge, like Classic's cubes.
-  if (x2 - x1 >= 10) {
-    ctx.globalAlpha = 1 - fog;
-    ctx.drawImage(faceShadeSprite(), x1, yTop, x2 - x1, yBot - yTop);
-    ctx.globalAlpha = 0.75 * (1 - fog);
-    ctx.fillStyle = sh.edge[fi];
+  // The front gets a gentle top-to-bottom gradient (three flat bands, lighter
+  // at the top, each painted once) and a thin bright highlight along its top
+  // edge, like Classic.
+  if (x2 - x1 < 14) {
+    ctx.fillStyle = sh.front[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+  } else {
+    const fh = yBot - yTop;
+    const yA = yTop + fh * 0.36, yB = yBot - fh * 0.28;
+    ctx.fillStyle = sh.frontHi[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, yA - yTop);
+    ctx.fillStyle = sh.front[fi];
+    ctx.fillRect(x1, yA, x2 - x1, yB - yA);
+    ctx.fillStyle = sh.frontLo[fi];
+    ctx.fillRect(x1, yB, x2 - x1, yBot - yB);
+    ctx.fillStyle = sh.rim[fi];
     ctx.fillRect(x1, yTop, x2 - x1, Math.max(1, 0.035 * kn));
-    ctx.globalAlpha = 1;
   }
   if (glow > 0) {
     ctx.globalAlpha = glow * (1 - fog) * 0.9;
