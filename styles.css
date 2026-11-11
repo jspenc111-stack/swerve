@@ -296,14 +296,11 @@ h2 { margin: 0 0 4px; font-size: 30px; }
   border-radius: 7px;
   overflow: hidden;
 }
-.level-chip .swatch-cube {
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -20%);
-  border-radius: 1px;
+/* A tiny picture of the level's sky (its sun or moon, ridges and a cube), drawn in code. */
+.level-chip .swatch canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .level-chip .num { font-weight: 800; font-size: 13px; }
 .level-chip .name { color: var(--muted); }

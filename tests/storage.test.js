@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   loadSave, writeSave, recordRun, defaultSave, STORAGE_KEY, rankOf, sortedHistory, clearHistory,
-  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf, flightFeelOf,
+  bestScoreOf, runsIn, resetBests, GAME_MODES, collectiveSideOf, flightFeelOf, effectsOf, startingEffects,
 } from '../js/storage.js';
 
 function memoryStorage(initial = {}) {
@@ -304,4 +304,66 @@ test('3D Flight Steering feel: an older save (from before v1.5.4) loads unchange
   assert.equal(loaded.settings.autoFire, false);
   assert.equal(collectiveSideOf(loaded), 'right');
   assert.equal(loaded.history.length, 1);
+});
+
+// ---- v1.6: the Visual effects setting (settings.effects) ----
+
+test('effects: defaults to full, and is only stored once set', () => {
+  assert.equal(effectsOf(defaultSave()), 'full');
+  assert.equal('effects' in defaultSave().settings, false, 'only stored once set');
+  const store = memoryStorage();
+  writeSave(defaultSave(), store);
+  assert.equal('effects' in JSON.parse(store.getItem('swerve:v1')).settings, false);
+});
+
+test('effects: lite (and full) round-trip inside swerve:v1', () => {
+  for (const level of ['lite', 'full']) {
+    const store = memoryStorage();
+    const s = defaultSave();
+    s.settings.effects = level;
+    writeSave(s, store);
+    assert.equal(JSON.parse(store.getItem('swerve:v1')).settings.effects, level, 'saved inside swerve:v1');
+    assert.equal(effectsOf(loadSave(store)), level);
+    assert.deepEqual(Object.keys(store.data ?? { 'swerve:v1': 1 }), ['swerve:v1'], 'no other key is written');
+  }
+});
+
+test('effects: invalid values are rejected on load and on save', () => {
+  for (const bad of ['ultra', 'Lite', '', 0, true, null, ['lite'], { level: 'lite' }]) {
+    const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify({ settings: { effects: bad } }) }));
+    assert.equal(effectsOf(loaded), 'full', String(bad));
+    assert.equal('effects' in loaded.settings, false);
+    const store = memoryStorage();
+    const s = defaultSave();
+    s.settings.effects = bad;
+    writeSave(s, store);
+    assert.equal('effects' in JSON.parse(store.getItem('swerve:v1')).settings, false, `${String(bad)} is not saved`);
+  }
+});
+
+test('effects: old saves (v1.5.4 and earlier) load unchanged and play on Full', () => {
+  const old = {
+    bestScore: 1234, bestLevel: 5, flightBestScore: 77, flightBestLevel: 2,
+    settings: { controls: 'drag', sound: false, vibration: true, startLevel: 3, mode: 'flight', invertY: true, autoFire: false, flightFeel: 'quick', collectiveSide: 'right' },
+    history: [{ score: 1234, level: 5, startLevel: 1, at: 1700000000000, mode: 'classic' }],
+  };
+  const loaded = loadSave(memoryStorage({ 'swerve:v1': JSON.stringify(old) }));
+  assert.equal(loaded.bestScore, 1234);
+  assert.equal(loaded.settings.controls, 'drag');
+  assert.equal(loaded.settings.flightFeel, 'quick');
+  assert.equal(loaded.history.length, 1);
+  assert.equal(effectsOf(loaded), 'full');
+  assert.equal('effects' in loaded.settings, false);
+});
+
+test('effects: with "reduce motion" on, a phone that has never chosen starts on Lite; a choice always wins', () => {
+  const fresh = defaultSave();
+  assert.equal(startingEffects(fresh, false), 'full');
+  assert.equal(startingEffects(fresh, true), 'lite');
+  assert.equal('effects' in fresh.settings, false, 'nothing is stored just by starting on Lite');
+  const chose = defaultSave();
+  chose.settings.effects = 'full';
+  assert.equal(startingEffects(chose, true), 'full');
+  chose.settings.effects = 'lite';
+  assert.equal(startingEffects(chose, false), 'lite');
 });

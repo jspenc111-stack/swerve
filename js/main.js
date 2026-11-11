@@ -25,7 +25,7 @@ import {
   createParticles, spawn, update as updateParticles, clearParticles, setParticleLimit, KIND,
   PARTICLE_CAP_FULL, PARTICLE_CAP_LITE, createTrail, pushTrail, clearTrail,
 } from './particles.js';
-import { sceneOf } from './scenery.js';
+import { sceneOf, paintThumb } from './scenery.js';
 import { createRenderer, resizeRenderer, drawFrame } from './render.js';
 import {
   createInput, getSteer, getFlightSteer, getBoost, bindBoostButton, clearInput, setControlMode,
@@ -35,6 +35,7 @@ import {
 import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
   bestScoreOf, runsIn, resetBests, collectiveSideOf, seenChopperTipsOf, flightFeelOf,
+  startingEffects,
 } from './storage.js';
 import { createQuality, updateQuality, qualityScale, resetQualityRun, pauseQuality } from './quality.js';
 import {
@@ -62,6 +63,18 @@ const chopperPilot = { lever: 0, stickX: 0, stickY: 0 }; // menu preview autopil
 const chopperKeyState = {};
 const save = loadSave(undefined, CONFIG.historyMax);
 bindBoostButton(input, $('btn-boost'));
+
+// "Reduce motion" (a phone accessibility setting): start on Lite effects, and
+// skip the crash slow motion and the boost zoom.
+let reducedMotion = false;
+try {
+  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+} catch { /* not supported: full motion */ }
+// Visual effects: the owner's Full/Lite choice (Settings), or Lite if auto
+// quality had to step in during this run.
+function liteEffects() {
+  return startingEffects(save, reducedMotion) === 'lite' || quality.lite;
+}
 
 // Auto quality: lowers the drawing sharpness (then the effects) if the frame
 // rate drops while playing, and raises it again when things are smooth.
@@ -767,6 +780,10 @@ function renderSettings() {
   $('btn-collective').textContent = `3D Heli collective: ${right ? 'Right' : 'Left'}`;
   $('btn-collective').setAttribute('aria-checked', String(right));
   renderFlightFeel();
+  const effects = startingEffects(save, reducedMotion);
+  for (const btn of document.querySelectorAll('[data-effects]')) {
+    btn.setAttribute('aria-checked', String(btn.dataset.effects === effects));
+  }
 }
 
 // 3D Flight's Steering feel switch (in Settings and on the pause screen).
@@ -802,12 +819,14 @@ function buildPicker() {
     b.dataset.level = String(i + 1);
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
-    const p = level.palette;
-    swatch.style.background = `linear-gradient(${p.sky} 0%, ${p.skyHorizon} 48%, ${p.ground} 52%, ${p.ground} 100%)`;
-    const cube = document.createElement('span');
-    cube.className = 'swatch-cube';
-    cube.style.background = p.cube;
-    swatch.appendChild(cube);
+    // A tiny picture of the level's sky (sun or moon, ridges, a cube), so
+    // levels are recognizable at a glance. Drawn in code by scenery.js.
+    const thumb = document.createElement('canvas');
+    thumb.width = 128;
+    thumb.height = 52;
+    thumb.setAttribute('aria-hidden', 'true');
+    paintThumb(thumb, level);
+    swatch.appendChild(thumb);
     const num = document.createElement('span');
     num.className = 'num';
     num.textContent = String(i + 1);
@@ -1063,9 +1082,9 @@ function frame(now) {
   // The effects' clock stops while the game is paused or behind a menu page.
   // The last moment of a crash plays in slow motion (look only).
   let fxDt = mode === 'playing' || mode === 'menu' || mode === 'crashing' || mode === 'over' ? realDt : 0;
-  if (mode === 'crashing' && now - crashAt >= CONFIG.gameOverDelayMs - CONFIG.crashSlowMoMs) fxDt *= 0.3;
+  if (mode === 'crashing' && !reducedMotion && now - crashAt >= CONFIG.gameOverDelayMs - CONFIG.crashSlowMoMs) fxDt *= 0.3;
   view.time += fxDt;
-  view.lite = quality.lite;
+  view.lite = liteEffects();
   setParticleLimit(particles, view.lite ? PARTICLE_CAP_LITE : PARTICLE_CAP_FULL);
   if (mode === 'playing' || mode === 'menu') spawnAmbient(fxDt);
   updateParticles(particles, fxDt);
@@ -1073,7 +1092,7 @@ function frame(now) {
   view.showShip = !(mode === 'crashing' || mode === 'over');
   // Boost: the view widens a little (eases in and out with the boost itself).
   const boostNow = gameMode === 'classic' ? game.boost : gameMode === 'flight' ? flight.boost : 0;
-  view.zoom = view.lite ? 1 : 1 - CONFIG.boostZoom * boostNow;
+  view.zoom = view.lite || reducedMotion ? 1 : 1 - CONFIG.boostZoom * boostNow;
   view.steer = gameMode === 'flight' ? flight.bankLook / CONFIG.flightRollDeg
     : gameMode === 'chopper' ? chopper.vx / CONFIG.chopperMaxSideSpeed
       : gameMode === 'classic' ? game.leanLook : 0;
@@ -1216,7 +1235,7 @@ function updateFps(now) {
         : gameMode === 'heli' ? heli.spawner.obstacles.length : game.spawner.cubes.length;
     fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))}` +
       ` · res ${renderer.dpr}× (step ${quality.step + 1}/${quality.steps.length})` +
-      ` · fx ${quality.lite ? 'lite (auto)' : 'full'} · obstacles ${count}`;
+      ` · fx ${quality.lite ? 'lite (auto)' : liteEffects() ? 'lite' : 'full'} · obstacles ${count}`;
     fpsFrames = 0;
     fpsSince = now;
   }
@@ -1271,6 +1290,9 @@ $('btn-invert').addEventListener('click', () => changeSetting((s) => { s.invertY
 $('btn-autofire').addEventListener('click', () => changeSetting((s) => { s.autoFire = !s.autoFire; }));
 for (const btn of document.querySelectorAll('[data-flightfeel]')) {
   btn.addEventListener('click', () => changeSetting((s) => { s.flightFeel = btn.dataset.flightfeel; }));
+}
+for (const btn of document.querySelectorAll('[data-effects]')) {
+  btn.addEventListener('click', () => changeSetting((s) => { s.effects = btn.dataset.effects; }));
 }
 $('btn-collective').addEventListener('click', () => changeSetting((s) => {
   s.collectiveSide = collectiveSideOf(save) === 'right' ? 'left' : 'right';
