@@ -260,6 +260,30 @@ export const CONFIG = {
 //   snake  — a narrow, winding tunnel with no obstacles
 //   mixed  — segmentLength and sequence, like Classic
 // palette: sky, skyHorizon, ground, cube, ship, text, and optional grid.
+//   Optional extras for the scenery: sun (the sun or moon's colour) and ridge
+//   (the distant hills' colour). Left out, they're mixed from the other colours.
+// scene: what the level's sky and ground look like (Classic, 3D Flight and
+//   3D Heli). Everything is optional; leave an element out to not have it.
+//   sun / moon — { size, height, x }: size as a share of the screen's short
+//              side; height above the horizon (0 = on it, 1 = top of the
+//              sky); x left/right of centre (-0.5 … 0.5; shadows fall the
+//              other way). Extras: color, halo (glow size, 1 = normal),
+//              bands: true (stripes across a sun's lower half), hazy: true,
+//              crescent: true (moon).
+//   stars    — { count }, plus faint: true, twinkle: true, shooting: true
+//              (a rare shooting star)
+//   clouds   — { layers: 1 or 2, amount: 0–1 }, plus puffy, thin or dark: true
+//   ridges   — distant shapes on the horizon: { style, layers: 1–3, height,
+//              jagged: 0–1 }. style: hills, mountains, mesas, dunes or islands.
+//              Keep height small (under 0.1): they must stay scenery.
+//   haze     — { strength: 0–1 }: a soft glow band along the horizon
+//   rain     — { amount: 0–1 }: slanted streaks (off on Visual effects: Lite)
+//   bolt     — true: a forked lightning bolt with each lightning flash
+//   ground   — 'water' (sparkles, reflections, a wake), 'neon' (a glowing
+//              grid with a pulse) or 'wet' (reflections, rain splashes)
+//   ambient  — 'dust' or 'embers': a few drifting specks (off on Lite)
+//   Scenery must never look like something you could hit: obstacles stay the
+//   clearest thing on screen.
 // effects (optional): glow (true/false), roll { degrees, periodSec },
 //   lightning { minGapSec, maxGapSec }.
 // speedBonus (optional): extra speed for this level only.
@@ -269,6 +293,12 @@ export const LEVELS = [
     pattern: { type: 'scatter', density: 2.9, swing: 4, flank: 0.15 },
     flight: { type: 'floaters', density: 2.4, chopperDensity: 1.8, minSize: 1.4, maxSize: 2.6, ringSpacing: 60 },
     heli: { type: 'cave', opening: 9.5, wander: 0.5, roughness: 0.3, blockSpacing: 24, blockMin: 2.5, blockMax: 3.5 },
+    scene: {
+      sun: { size: 0.075, height: 0.1, x: 0.27 },
+      clouds: { layers: 2, amount: 0.5 },
+      ridges: { style: 'hills', layers: 2, height: 0.05, jagged: 0.3 },
+      haze: { strength: 0.7 },
+    },
     palette: {
       sky: '#bcd8ee', skyHorizon: '#f3f7fa', ground: '#f1f1ec', grid: '#e1e2dc',
       cube: '#8d939b', ship: '#d9483b', text: '#26303c',
@@ -285,6 +315,13 @@ export const LEVELS = [
       ],
     },
     heli: { type: 'cave', opening: 8.8, wander: 0.7, roughness: 0.4, blockSpacing: 18, blockMin: 3, blockMax: 4.2 },
+    scene: {
+      sun: { size: 0.2, height: 0.05, x: 0, bands: true, color: '#fff0a6', halo: 0.8 },
+      clouds: { layers: 1, amount: 0.35, thin: true },
+      ridges: { style: 'mountains', layers: 2, height: 0.07, jagged: 0.8, color: '#5b3458' },
+      haze: { strength: 0.8 },
+      ambient: 'embers',
+    },
     palette: {
       sky: '#ee7b5a', skyHorizon: '#fbd2a2', ground: '#e8cd9c', grid: '#d9ba85',
       cube: '#ea6457', ship: '#283a78', text: '#3a1d17',
@@ -295,6 +332,12 @@ export const LEVELS = [
     pattern: { type: 'clusters', chance: 0.95, min: 3, max: 6, swing: 5, flank: 0.2 },
     flight: { type: 'pillars', chance: 1, minHeight: 2, ringSpacing: 60 },
     heli: { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.35, spikeMin: 2, spikeMax: 4 },
+    scene: {
+      sun: { size: 0.045, height: 0.55, x: -0.24 },
+      clouds: { layers: 2, amount: 0.7, puffy: true },
+      ridges: { style: 'islands', layers: 2, height: 0.035, color: '#3f9c8c' },
+      ground: 'water',
+    },
     palette: {
       sky: '#86cff2', skyHorizon: '#e0f5fb', ground: '#15837a', grid: '#20958b',
       cube: '#f6fbfb', ship: '#ffd23f', text: '#06323a',
@@ -305,6 +348,12 @@ export const LEVELS = [
     pattern: { type: 'gates', rowSpacing: 15, gapWidth: 2.9, wingCubes: 5, between: 1.8 },
     flight: { type: 'frames', spacing: 20, holeWidth: 3.3, holeHeight: 2.75, extent: 7, depth: 1.2, ringSpacing: 66 },
     heli: { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
+    scene: {
+      moon: { size: 0.12, height: 0.34, x: 0.24, color: '#fbf6ea' },
+      stars: { count: 70, faint: true },
+      ridges: { style: 'dunes', layers: 2, height: 0.05 },
+      haze: { strength: 0.4 },
+    },
     palette: {
       sky: '#c4b1e6', skyHorizon: '#efe7fa', ground: '#f6efdc', grid: '#e6d9bd',
       cube: '#7a49b4', ship: '#e46f35', text: '#2d1e46',
@@ -315,6 +364,11 @@ export const LEVELS = [
     pattern: { type: 'scatter', density: 4.9, swing: 5, flank: 0.12 },
     flight: { type: 'floaters', density: 4.9, chopperDensity: 3.6, minSize: 1.2, maxSize: 2.4, ringSpacing: 60 },
     heli: { type: 'cave', opening: 7.6, wander: 0.8, roughness: 0.4, blockSpacing: 13, blockMin: 3, blockMax: 4.5 },
+    scene: {
+      moon: { size: 0.05, height: 0.42, x: -0.28, crescent: true, color: '#dfe9ff', halo: 0.55 },
+      stars: { count: 230, twinkle: true, shooting: true },
+      ground: 'neon',
+    },
     palette: {
       sky: '#04050a', skyHorizon: '#131a2a', ground: '#0b0e16', grid: '#173450',
       cube: '#19e2ef', ship: '#ff4fa3', text: '#d8f6ff',
@@ -326,6 +380,12 @@ export const LEVELS = [
     pattern: { type: 'canyon', width: 5.0, wallDepth: 6, extra: 1.53 },
     flight: { type: 'frames', spacing: 4, holeWidth: 5.0, holeHeight: 4.0, extent: 4, depth: 4, ringSpacing: 48 },
     heli: { type: 'snake', opening: 5.4, wander: 1, roughness: 0.5 },
+    scene: {
+      sun: { size: 0.085, height: 0.3, x: 0.2, hazy: true, halo: 1.4 },
+      ridges: { style: 'mesas', layers: 3, height: 0.085 },
+      haze: { strength: 0.9 },
+      ambient: 'dust',
+    },
     palette: {
       sky: '#d5845a', skyHorizon: '#f2c08d', ground: '#a9562f', grid: '#934625',
       cube: '#6b2d1b', ship: '#f6e8c6', text: '#2a1209',
@@ -356,6 +416,11 @@ export const LEVELS = [
         { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 14, window: 3.6 },
         { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.4, spikeMin: 2, spikeMax: 4 },
       ],
+    },
+    scene: {
+      clouds: { layers: 2, amount: 0.65 },
+      ridges: { style: 'hills', layers: 2, height: 0.04, jagged: 0.2, color: '#9ccdb4' },
+      haze: { strength: 0.5 },
     },
     palette: {
       sky: '#a3e3c9', skyHorizon: '#e9faf2', ground: '#fbf4df', grid: '#ece1c3',
@@ -392,6 +457,12 @@ export const LEVELS = [
         { type: 'gates', opening: 9, wander: 0.4, roughness: 0.3, spacing: 12, window: 3.4 },
         { type: 'spikes', opening: 8.6, wander: 0.6, roughness: 0.3, spikeChance: 0.45, spikeMin: 2, spikeMax: 4.2 },
       ],
+    },
+    scene: {
+      clouds: { layers: 2, amount: 1, dark: true },
+      rain: { amount: 1 },
+      bolt: true,
+      ground: 'wet',
     },
     palette: {
       sky: '#46564d', skyHorizon: '#7b8b7f', ground: '#36433c', grid: '#46544b',

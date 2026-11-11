@@ -128,6 +128,11 @@ const view = {
   joystick: { active: false, x0: 0, y0: 0, x: 0, y: 0 },
   controls: null,  // 3D Heli: the lever and stick to draw
   path: false,     // debug: draw the open path (3D Heli)
+  // For the scenery (see scenery.js): which level's sky to show, the one it
+  // is fading from, how far the fade has got, a clock for moving things, how
+  // hard you're steering (the sky shifts a little), and the lightning bolt.
+  level: LEVELS[0], prevLevel: null, fade: 1, time: 0, steer: 0, lite: false,
+  boltAt: -1, boltSeed: 1,
 };
 const chopperControlsView = { cc: input.chopper, hover: CONFIG.chopperHover, leverHeld: false, stick: null };
 
@@ -141,6 +146,10 @@ function startLevelFade(snap) {
   glowFrom = view.glow;
   rollFrom = rollAmp;
   fadeT = snap ? 1 : 0;
+  view.prevLevel = snap ? null : view.level;
+  view.level = cur().info.level;
+  view.fade = fadeT;
+  view.boltAt = -1;
   if (snap) {
     copyPalette(cur().info.level.palette, shownPalette);
     view.glow = effectsOf(cur().info.level).glow ? 1 : 0;
@@ -167,6 +176,8 @@ function updateColors(dt) {
     view.glow = glowTarget;
     rollAmp = targetRoll();
   }
+  view.level = level;
+  view.fade = fadeT;
   if (shownPalette.text !== shownText) {
     shownText = shownPalette.text;
     document.documentElement.style.setProperty('--hud-text', shownText);
@@ -190,6 +201,9 @@ function updateLightning(now) {
   if (!nextStrike) nextStrike = now + randomBetween(storm.minGapSec, storm.maxGapSec) * 1000;
   if (now >= nextStrike) {
     strikeStart = now;
+    // A forked bolt in the sky with each flash (see scenery.js).
+    view.boltAt = view.time;
+    view.boltSeed = (Math.random() * 0x7fffffff) | 0;
     nextStrike = now + randomBetween(storm.minGapSec, storm.maxGapSec) * 1000;
   }
   if (strikeStart < 0) return 0;
@@ -898,6 +912,12 @@ function frame(now) {
   }
 
   const realDt = Math.min(dt, 0.1);
+  // The scenery's clock stops while the game is paused or behind a menu page.
+  if (mode === 'playing' || mode === 'menu' || mode === 'crashing' || mode === 'over') view.time += realDt;
+  view.lite = quality.lite;
+  view.steer = gameMode === 'flight' ? flight.bankLook / CONFIG.flightRollDeg
+    : gameMode === 'chopper' ? chopper.vx / CONFIG.chopperMaxSideSpeed
+      : gameMode === 'classic' ? game.leanLook : 0;
   updateColors(realDt);
   if (bannerUntil && now > bannerUntil) hideBanner();
   if (mode === 'playing') updateBank(realDt);

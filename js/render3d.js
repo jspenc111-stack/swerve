@@ -7,7 +7,12 @@
 
 import { mixColor } from './levels.js';
 import { drawChopperModel, drawHelipad, drawDownwash } from './chopperModel.js';
-import { glowSprite, drawGlow } from './sprites.js';
+import { glowSprite, drawGlow, drawGlowOval, faceShadeSprite } from './sprites.js';
+import { drawSky, drawRain, sceneOf, sceneLight } from './scenery.js';
+import {
+  drawSpeedStreaks, drawWaterGlints, drawRainSplashes, drawNeonGrid, drawGroundShadow,
+} from './groundFx.js';
+import { luminance, cubeVariant } from './render.js';
 
 const FOG_STEPS = 24;
 const SHADE_STEPS = 24;
@@ -17,7 +22,8 @@ export function createFlightRenderer() {
   return {
     items: [],
     paletteKey: '',
-    shades: { front: [], top: [], bottom: [], side: [], edge: [] },
+    // Three brightness sets (a touch darker, normal, a touch lighter), like Classic.
+    shadeSets: [0, 1, 2].map(() => ({ front: [], top: [], bottom: [], side: [], edge: [] })),
     gradKey: '',
     skyGrad: null,
     groundGrad: null,
@@ -26,22 +32,55 @@ export function createFlightRenderer() {
   };
 }
 
+const VARIANTS = [-0.06, 0, 0.06];
 function updateShades(s, p) {
-  const key = p.cube + p.skyHorizon;
+  const key = p.cube + p.skyHorizon + p.ground;
   if (key === s.paletteKey) return;
   s.paletteKey = key;
-  const top = mixColor(p.cube, '#ffffff', 0.28);
-  const bottom = mixColor(p.cube, '#000000', 0.42);
-  const side = mixColor(p.cube, '#000000', 0.25);
-  const edge = mixColor(p.cube, '#ffffff', 0.65);
-  for (let i = 0; i < FOG_STEPS; i++) {
-    const t = i / (FOG_STEPS - 1);
-    s.shades.front[i] = mixColor(p.cube, p.skyHorizon, t);
-    s.shades.top[i] = mixColor(top, p.skyHorizon, t);
-    s.shades.bottom[i] = mixColor(bottom, p.skyHorizon, t);
-    s.shades.side[i] = mixColor(side, p.skyHorizon, t);
-    s.shades.edge[i] = mixColor(edge, p.skyHorizon, t);
+  for (let v = 0; v < VARIANTS.length; v++) {
+    const d = VARIANTS[v];
+    const base = d < 0 ? mixColor(p.cube, '#000000', -d) : mixColor(p.cube, '#ffffff', d);
+    const top = mixColor(base, '#ffffff', 0.28);
+    const bottom = mixColor(base, '#000000', 0.42);
+    const side = mixColor(base, '#000000', 0.25);
+    const edge = mixColor(base, '#ffffff', 0.65);
+    const set = s.shadeSets[v];
+    for (let i = 0; i < FOG_STEPS; i++) {
+      const t = i / (FOG_STEPS - 1);
+      set.front[i] = mixColor(base, p.skyHorizon, t);
+      set.top[i] = mixColor(top, p.skyHorizon, t);
+      set.bottom[i] = mixColor(bottom, p.skyHorizon, t);
+      set.side[i] = mixColor(side, p.skyHorizon, t);
+      set.edge[i] = mixColor(edge, p.skyHorizon, t);
+    }
   }
+  const dark = luminance(p.ground) < 0.45;
+  s.streakColor = dark ? mixColor(p.ground, '#ffffff', 0.45) : mixColor(p.ground, '#000000', 0.22);
+  s.neonGlow = mixColor(p.cube, '#ffffff', 0.35);
+  s.cubeGlowSprite = glowSprite(mixColor(p.cube, '#ffffff', 0.2), p.cube, 0.5);
+}
+
+const GEO = { ctx: null, cx: 0, hY: 0, f: 1, camX: 0, camZ: 0, camH: 1, w: 1, h: 1, far: 1 };
+const SKY = { w: 1, h: 1, horizonY: 0, skySpan: 1, dpr: 1 };
+function geometry(r, cam) {
+  const g = GEO;
+  g.ctx = r.ctx; g.cx = r.cx; g.hY = cam.hY; g.f = r.f;
+  g.camX = cam.x; g.camZ = cam.z; g.camH = Math.max(0.5, cam.y); g.w = r.w; g.h = r.h; g.far = r.config.fogDistance;
+  return g;
+}
+
+// The ground and its effects, shared by 3D Flight and 3D Heli.
+function drawGroundLayer(r, s, p, cam, view, scene, speed, boost) {
+  const g = geometry(r, cam);
+  const time = view.time || 0;
+  if (scene.ground === 'neon') drawNeonGrid(g, p.grid || s.neonGlow, s.neonGlow, time, view.glow ?? 1);
+  else if (p.grid) drawGrid(r, p, cam);
+  if (!view.lite) {
+    drawSpeedStreaks(g, speed, boost, s.streakColor);
+    if (scene.ground === 'water') drawWaterGlints(g, time);
+    if (scene.ground === 'wet') drawRainSplashes(g, time);
+  }
+  return g;
 }
 
 // view: palette, bank, roll, shakeX, shakeY, flash, glow, camY, joystick, hitboxes
@@ -63,10 +102,11 @@ export function drawFlightFrame(r, s, f, view) {
   ctx.rotate(angle);
   ctx.translate(-r.cx, -pivotY);
 
-  drawSkyAndGround(r, s, p, cam);
-  if (p.grid) drawGrid(r, p, cam);
+  const scene = sceneOf(view.level);
+  drawSkyAndGround(r, s, p, cam, view, scene);
+  const g = drawGroundLayer(r, s, p, cam, view, scene, f.speed || 0, f.boost || 0);
   drawShadow(r, f, cam);
-  drawWorld(r, s, f, cam, view.glow || 0);
+  drawWorld(r, s, f, cam, view.glow || 0, scene, g);
   if (view.hitboxes) drawHitbox(r, f, cam);
   drawBullets(r, f, cam);
   drawFx(r, f, cam, false);
@@ -74,6 +114,7 @@ export function drawFlightFrame(r, s, f, view) {
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
+  if (view.level) drawRain(ctx, r.scenery, view, w, h);
   if (view.showShip !== false) drawJet(r, s, p, f, cam);
   drawFx(r, f, cam, true); // floating "+50" text on top
 
@@ -96,22 +137,29 @@ function proj(r, cam, x, y, z, out) {
   return out;
 }
 
-function drawSkyAndGround(r, s, p, cam) {
+function drawSkyAndGround(r, s, p, cam, view, scene) {
   const { ctx, w, h } = r;
   const hY = cam.hY;
-  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h;
+  const hazy = scene.haze ? scene.haze.strength : 0;
+  const key = p.sky + p.skyHorizon + p.ground + w + 'x' + h + hazy;
   if (key !== s.gradKey) {
     s.gradKey = key;
     s.skyGrad = ctx.createLinearGradient(0, hY - h * 0.65, 0, hY);
     s.skyGrad.addColorStop(0, p.sky);
     s.skyGrad.addColorStop(1, p.skyHorizon);
+    // Horizon glow: the ground blends into the haze colour at the horizon.
     s.groundGrad = ctx.createLinearGradient(0, hY, 0, h);
-    s.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.6));
-    s.groundGrad.addColorStop(0.3, p.ground);
+    s.groundGrad.addColorStop(0, mixColor(p.ground, p.skyHorizon, 0.6 + 0.25 * hazy));
+    s.groundGrad.addColorStop(0.3 + 0.1 * hazy, p.ground);
     s.groundGrad.addColorStop(1, p.ground);
   }
   ctx.fillStyle = s.skyGrad;
   ctx.fillRect(-w, hY - h * 2, w * 3, h * 2 + 1);
+  // The level's sky scene (painted once, stamped here every frame).
+  if (view.level) {
+    SKY.w = w; SKY.h = h; SKY.horizonY = hY; SKY.skySpan = h * 0.65; SKY.dpr = r.dpr;
+    drawSky(ctx, r.scenery, view, SKY);
+  }
   ctx.fillStyle = s.groundGrad;
   ctx.fillRect(-w, hY, w * 3, h * 2);
 }
@@ -162,7 +210,7 @@ function drawShadow(r, f, cam, span = r.config.flightShipSpan) {
 }
 
 // Boxes and rings, sorted far → near (painter's algorithm).
-function drawWorld(r, s, f, cam, glow) {
+function drawWorld(r, s, f, cam, glow, scene, g) {
   const { ctx, w } = r;
   const cfg = r.config;
   const items = s.items;
@@ -193,10 +241,40 @@ function drawWorld(r, s, f, cam, glow) {
   items.sort(byFarFirst);
   const fogStart = cfg.fogStart;
   const fogRange = Math.max(1, cfg.fogDistance - fogStart);
+  // Depth cues: a soft shadow on the ground straight under every block,
+  // pillar, frame piece and drone (leaning slightly away from the light), so
+  // you can judge how high things are. They fade with the fog. On glow
+  // levels (Night) the ground is too dark for shadows, so each one is a soft
+  // pool of light instead. Drawn first: everything else is above the ground.
+  const lean = -sceneLight(scene) * 0.35;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.taken !== undefined) continue; // rings cast no shadow
+    const drone = it.hp !== undefined;
+    const halfW = drone ? it.size * 0.5 : it.w / 2;
+    const halfD = drone ? it.size * 0.5 : it.d / 2;
+    const zn = it.z - halfD - cam.z;
+    if (zn <= NEAR) continue;
+    let fog = (zn - fogStart) / fogRange;
+    fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
+    const height = drone ? it.y - it.size / 2 : it.y;
+    const fade = (1 - fog) / (1 + Math.max(0, height) * 0.06);
+    if (glow > 0.5) {
+      const k = r.f / (it.z - cam.z);
+      const kn = r.f / zn, kf = r.f / (zn + halfD * 2);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.32 * glow * fade;
+      drawGlowOval(ctx, s.cubeGlowSprite, r.cx + (it.x - cam.x) * k, cam.hY + g.camH * k, halfW * 2.2 * k, Math.max(2, g.camH * (kn - kf) * 1.1));
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    } else {
+      drawGroundShadow(g, it.x + lean * halfW, it.z, halfW, halfD, 0.3 * fade * (1 - glow));
+    }
+  }
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     if (it.hp !== undefined) drawDrone(r, it, cam, f.time, fogStart, fogRange);
-    else if (it.taken !== undefined) drawRing(r, it, cam, fogStart, fogRange);
+    else if (it.taken !== undefined) drawRing(r, it, cam, fogStart, fogRange, f.time);
     else drawBox(r, s, it, cam, glow, fogStart, fogRange);
   }
   ctx.globalAlpha = 1;
@@ -208,7 +286,7 @@ function byFarFirst(a, b) {
 
 function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
   const { ctx, f, cx } = r;
-  const sh = s.shades;
+  const sh = s.shadeSets[cubeVariant(b.x, b.z)];
   const zn = Math.max(b.z - b.d / 2 - cam.z, NEAR);
   const zf = b.z + b.d / 2 - cam.z;
   const xl = b.x - b.w / 2 - cam.x;
@@ -250,6 +328,16 @@ function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
   }
   ctx.fillStyle = sh.front[fi];
   ctx.fillRect(x1, yTop, x2 - x1, yBot - yTop);
+  // The front gets a gentle top-to-bottom gradient (lighter at the top) and a
+  // thin bright highlight along its top edge, like Classic's cubes.
+  if (x2 - x1 >= 10) {
+    ctx.globalAlpha = 1 - fog;
+    ctx.drawImage(faceShadeSprite(), x1, yTop, x2 - x1, yBot - yTop);
+    ctx.globalAlpha = 0.75 * (1 - fog);
+    ctx.fillStyle = sh.edge[fi];
+    ctx.fillRect(x1, yTop, x2 - x1, Math.max(1, 0.035 * kn));
+    ctx.globalAlpha = 1;
+  }
   if (glow > 0) {
     ctx.globalAlpha = glow * (1 - fog) * 0.9;
     ctx.strokeStyle = sh.edge[fi];
@@ -261,7 +349,7 @@ function drawBox(r, s, b, cam, glow, fogStart, fogRange) {
 
 // Bonus ring: a glowing square frame.
 const RA = {}, RB = {};
-function drawRing(r, g, cam, fogStart, fogRange) {
+function drawRing(r, g, cam, fogStart, fogRange, time = 0) {
   const ctx = r.ctx;
   const half = g.size / 2;
   proj(r, cam, g.x - half, g.y + half, g.z, RA);
@@ -269,9 +357,11 @@ function drawRing(r, g, cam, fogStart, fogRange) {
   const k = r.f / (g.z - cam.z);
   let fog = (g.z - cam.z - fogStart) / fogRange;
   fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
-  ctx.globalAlpha = 1 - fog * 0.85;
+  // A slow shimmer: the ring's glow gently swells and fades.
+  const shimmer = 0.5 + 0.5 * Math.sin(time * 2.2 + g.z * 0.37);
+  ctx.globalAlpha = (1 - fog * 0.85) * (0.8 + 0.2 * shimmer);
   ctx.strokeStyle = 'rgba(255, 196, 64, 0.45)';
-  ctx.lineWidth = Math.max(2, 0.35 * k);
+  ctx.lineWidth = Math.max(2, (0.3 + 0.14 * shimmer) * k);
   ctx.strokeRect(RA.x, RA.y, RB.x - RA.x, RB.y - RA.y);
   ctx.strokeStyle = '#fff3c4';
   ctx.lineWidth = Math.max(1, 0.1 * k);
@@ -532,15 +622,20 @@ export function drawChopperFrame(r, s, c, look, view) {
   ctx.rotate(angle);
   ctx.translate(-r.cx, -pivotY);
 
-  drawSkyAndGround(r, s, p, cam);
-  if (p.grid) drawGrid(r, p, cam);
+  const scene = sceneOf(view.level);
+  drawSkyAndGround(r, s, p, cam, view, scene);
+  const g = drawGroundLayer(r, s, p, cam, view, scene, c.speed || 0, 0);
   drawHelipad(r, cam, c.padZ);
   drawDownwash(r, cam, c, look);
   drawShadow(r, c, cam, cfg.chopperLength * 0.7);
-  drawWorld(r, s, c, cam, view.glow || 0);
+  drawWorld(r, s, c, cam, view.glow || 0, scene, g);
   if (view.path) drawPath(r, c, cam);
   if (view.hitboxes) { drawHitbox(r, c, cam, c.hitbox); drawHitbox(r, c, cam, c.rotorBox); }
   if (view.showShip !== false) drawChopperModel(r, s, cam, c, look, p);
+  if (view.level) {
+    ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
+    drawRain(ctx, r.scenery, view, w, h);
+  }
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   const ctl = view.controls;

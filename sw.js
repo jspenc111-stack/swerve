@@ -41,6 +41,8 @@ const PRECACHE = [
   './js/storage.js',
   './js/quality.js',
   './js/sprites.js',
+  './js/scenery.js',
+  './js/groundFx.js',
 ];
 
 self.addEventListener('install', (event) => {

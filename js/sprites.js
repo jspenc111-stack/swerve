@@ -56,3 +56,30 @@ function transparent(color) {
   }
   return 'rgba(255,255,255,0)';
 }
+
+// A soft dark blob for ground shadows.
+let shadow = null;
+export function shadowSprite() {
+  if (!shadow) shadow = glowSprite('rgba(0,0,0,0.85)', 'rgba(0,0,0,0.5)', 0.55);
+  return shadow;
+}
+
+// A thin strip that is light at the top and slightly dark at the bottom. It
+// is stretched over the front of a cube or block to give it a gentle
+// top-to-bottom gradient, without building a gradient per cube per frame.
+let faceShade = null;
+export function faceShadeSprite() {
+  if (faceShade) return faceShade;
+  faceShade = document.createElement('canvas');
+  faceShade.width = 2;
+  faceShade.height = 32;
+  const g = faceShade.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,0.22)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.03)');
+  grad.addColorStop(0.5, 'rgba(0,0,0,0.0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.16)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 2, 32);
+  return faceShade;
+}
