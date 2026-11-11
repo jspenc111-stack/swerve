@@ -36,6 +36,7 @@ export function resetGame(game, seed = game.seed + 1, startLevel = 0) {
   game.score = 0;
   game.x = 0;
   game.vx = 0;
+  game.leanLook = 0; // eased sideways speed, -1 … 1, for drawing the ship's lean (look only)
   game.time = 0;
   game.levelTime = 0;
   game.boost = 0; // 0 = normal speed … 1 = full boost (eases in and out)
@@ -74,13 +75,19 @@ export function stepGame(game, dt, steer, boosting = false) {
   if (steer !== 0) {
     const target = steer * cfg.maxSteerSpeed;
     const diff = target - game.vx;
-    const step = cfg.steerAccel * dt;
+    // Steering against the way you're sliding (turning around) pulls harder,
+    // so changing direction is quick. Speeding up from rest is unchanged.
+    const reversing = game.vx !== 0 && Math.sign(steer) !== Math.sign(game.vx);
+    const step = cfg.steerAccel * (reversing ? (cfg.classicReverseBoost ?? 1) : 1) * dt;
     game.vx += Math.abs(diff) <= step ? diff : Math.sign(diff) * step;
   } else {
     game.vx *= Math.exp(-cfg.steerFriction * dt);
     if (Math.abs(game.vx) < 0.01) game.vx = 0;
   }
   game.x += game.vx * dt;
+  // The ship's lean eases toward its sideways speed, so a quick turn-around
+  // doesn't make it rock. Look only: nothing else uses it.
+  game.leanLook += (game.vx / cfg.maxSteerSpeed - game.leanLook) * (1 - Math.exp(-(cfg.shipLeanEase ?? 1e9) * dt));
 
   // Boost eases in and out so the speed change feels smooth.
   const boostTarget = boosting ? 1 : 0;
@@ -133,6 +140,7 @@ export function jumpToLevel(game, absIndex) {
   game.levelIndex = absIndex;
   game.levelTime = 0;
   game.vx = 0;
+  game.leanLook = 0;
   levelForDistance(start, cfg, game.levels, game.info);
   game.baseSpeed = classicBaseSpeed(game.info, cfg);
   game.speed = game.baseSpeed;

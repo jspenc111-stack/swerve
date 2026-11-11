@@ -132,9 +132,11 @@ LEVELS.forEach((level, i) => {
 });
 
 // Comparing two levels means dividing one noisy number by another, so this
-// check averages over more seeds than the per-level checks (the free-ride
-// test does the same for its comparison).
-const COMPARE_SEEDS = 144;
+// check averages over many more seeds than the per-level checks (the
+// free-ride test does the same for its comparison). Over a thousand seeds
+// Lagoon measures about 83% of Sunset; with only a few dozen seeds the answer
+// swings between about 70% and 85% by chance.
+const COMPARE_SEEDS = 480;
 test('classic action: Lagoon is not quieter than Sunset', () => {
   const s = LEVELS.findIndex((l) => l.name === 'Sunset');
   const l = LEVELS.findIndex((l) => l.name === 'Lagoon');

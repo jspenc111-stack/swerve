@@ -27,10 +27,12 @@ export const CONFIG = {
   steerAccel: 55,           // how quickly sideways speed builds up
   maxSteerSpeed: 11,        // top sideways speed
   steerFriction: 7,         // how quickly you stop drifting when you let go
+  classicReverseBoost: 1.8, // Classic: steering against your slide pulls this many times harder (quicker turn-arounds)
   bankMaxDeg: 6,            // how far the view tilts while steering
   bankEase: 6,              // how quickly the tilt follows (higher = snappier)
   shipLeanDeg: 26,          // how far the ship rolls (dips a wing) into turns
   shipYawFactor: 0.25,      // how much the nose points the way you're sliding (0–1)
+  shipLeanEase: 12,         // how quickly the ship's lean follows its movement (look only; higher = snappier)
 
   // ---- Ship, cubes and camera --------------------------------------------
   shipWidth: 0.8,
@@ -44,6 +46,17 @@ export const CONFIG = {
   fogStart: 45,             // cubes start fading into the sky beyond this distance
   fogDistance: 110,         // cubes appear (fully faded) at this distance
   maxDevicePixelRatio: 2,   // sharpness cap (higher = crisper but slower)
+
+  // ---- Auto quality (keeps the frame rate steady) ---------------------------
+  // While playing, the game watches its own frame rate. If it stays too slow
+  // it lowers the drawing sharpness one step at a time, and as a last resort
+  // switches Visual effects to Lite for the rest of the run. It steps back up
+  // when things have been smooth for a while.
+  qualitySteps: [2, 1.5, 1.25], // sharpness steps, best first (device pixel ratio caps)
+  qualitySlowFactor: 1.25,  // "too slow" = frames this many times longer than the screen's own frame time
+  qualityDownSec: 2,        // step down after this long too slow
+  qualityUpSec: 10,         // step back up after this long smooth…
+  qualityUpGapSec: 20,      // …but at most once this often
 
   // ---- Score and levels --------------------------------------------------
   scorePerUnit: 0.5,        // points per unit of distance
@@ -87,7 +100,7 @@ export const CONFIG = {
   minGapHeight: 2.0,          // smallest opening height ever allowed (like minGapWidth)
   ringBonus: 25,              // points for flying through a ring
   ringSize: 3.2,              // width/height of a ring's opening
-  joystickRadiusPx: 70,       // drag this far from where you touched = full steering (3D Heli's cyclic)
+  joystickRadiusPx: 70,       // drag this far from where you touched = full steering (3D Heli's cyclic; its centre follows your thumb)
 
   // ---- 3D Flight controls ---------------------------------------------------
   // 3D Flight has its own, snappier control values (Classic and 3D Heli keep
@@ -192,7 +205,7 @@ export const CONFIG = {
   // ---- Controls ----------------------------------------------------------
   tiltRangeDeg: 18,         // tilting this far = full steering
   tiltDeadZoneDeg: 2.5,     // small tilts are ignored so the ship doesn't drift
-  dragRangePx: 80,          // dragging this far from where you touched = full steering
+  dragRangePx: 80,          // dragging this far from where you touched = full steering (the centre follows your thumb at this distance)
 
   // ---- Crash and effects -------------------------------------------------
   crashFlashMs: 160,

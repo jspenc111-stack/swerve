@@ -7,6 +7,7 @@
 
 import { mixColor } from './levels.js';
 import { drawChopperModel, drawHelipad, drawDownwash } from './chopperModel.js';
+import { glowSprite, drawGlow } from './sprites.js';
 
 const FOG_STEPS = 24;
 const SHADE_STEPS = 24;
@@ -48,12 +49,11 @@ export function drawFlightFrame(r, s, f, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
   updateShades(s, p);
-  const cam = {
-    x: f.x,
-    y: view.camY,
-    z: f.distance - cfg.flightCameraBack,
-    hY: h * cfg.flightHorizonRatio,
-  };
+  const cam = CAM; // one camera object, reused every frame
+  cam.x = f.x;
+  cam.y = view.camY;
+  cam.z = f.distance - cfg.flightCameraBack;
+  cam.hY = h * cfg.flightHorizonRatio;
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
@@ -86,6 +86,8 @@ export function drawFlightFrame(r, s, f, view) {
     ctx.globalAlpha = 1;
   }
 }
+
+const CAM = { x: 0, y: 0, z: 0, hY: 0 };
 
 function proj(r, cam, x, y, z, out) {
   const k = r.f / (z - cam.z);
@@ -151,10 +153,12 @@ function drawShadow(r, f, cam, span = r.config.flightShipSpan) {
   const height = f.y;
   const rx = (span / 2) * k * (1 - Math.min(0.5, height / 30));
   const ctx = r.ctx;
-  ctx.fillStyle = `rgba(0,0,0,${(0.22 * (1 - Math.min(0.75, height / 12))).toFixed(3)})`;
+  ctx.fillStyle = '#000000';
+  ctx.globalAlpha = 0.22 * (1 - Math.min(0.75, height / 12));
   ctx.beginPath();
   ctx.ellipse(S.x, S.y, rx, rx * 0.28, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 // Boxes and rings, sorted far → near (painter's algorithm).
@@ -279,6 +283,25 @@ function drawRing(r, g, cam, fogStart, fogRange) {
 
 // A drone: a spinning faceted crystal with a glowing core. Small ones are
 // pink-red; big armored ones are orange with a spinning ring and health pips.
+// Unit octahedron: top, bottom, then four around the middle.
+const DRONE_PTS = [[0, 1.25, 0], [0, -1.25, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1]];
+// Face colours for each brightness step, worked out once: small (pink-red),
+// big (orange) and the white hit-flash.
+const DRONE_STEPS = 16;
+const droneShades = (r0, g0, b0) => {
+  const out = [];
+  for (let i = 0; i < DRONE_STEPS; i++) {
+    const lit = 0.35 + 0.65 * (i / (DRONE_STEPS - 1));
+    out.push(`rgb(${(r0 * lit) | 0},${(g0 * lit) | 0},${(b0 * lit) | 0})`);
+  }
+  return out;
+};
+const DRONE_SMALL = droneShades(255, 70, 110);
+const DRONE_BIG = droneShades(255, 150, 40);
+const DRONE_FLASH = droneShades(255, 255, 255);
+const DC = { x: 0, y: 0 };
+let droneGlowSmall = null;
+let droneGlowBig = null;
 const DRONE_FACES = [[0, 2, 3], [0, 3, 4], [0, 4, 5], [0, 5, 2], [1, 3, 2], [1, 4, 3], [1, 5, 4], [1, 2, 5]];
 const DV = [{}, {}, {}, {}, {}, {}];
 const DS = [{}, {}, {}, {}, {}, {}];
@@ -288,10 +311,9 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   const h = t.size / 2;
   const spin = time * (t.big ? 1.6 : 2.6) + t.phase;
   const c = Math.cos(spin), sn = Math.sin(spin);
-  // Octahedron: top, bottom, then four around the middle.
-  const pts = [[0, h * 1.25, 0], [0, -h * 1.25, 0], [h, 0, 0], [0, 0, h], [-h, 0, 0], [0, 0, -h]];
   for (let i = 0; i < 6; i++) {
-    const [x, y, z] = pts[i];
+    const m = DRONE_PTS[i];
+    const x = m[0] * h, y = m[1] * h, z = m[2] * h;
     DV[i].x = t.x + x * c - z * sn;
     DV[i].y = t.y + y;
     DV[i].z = t.z + x * sn + z * c;
@@ -300,8 +322,10 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   let fog = (t.z - cam.z - fogStart) / fogRange;
   fog = fog < 0 ? 0 : fog > 1 ? 1 : fog;
   ctx.globalAlpha = 1 - fog * 0.8;
-  const base = t.flash > 0 ? [255, 255, 255] : t.big ? [255, 150, 40] : [255, 70, 110];
-  for (const [a, b, d] of DRONE_FACES) {
+  const shades = t.flash > 0 ? DRONE_FLASH : t.big ? DRONE_BIG : DRONE_SMALL;
+  for (let n = 0; n < DRONE_FACES.length; n++) {
+    const face = DRONE_FACES[n];
+    const a = face[0], b = face[1], d = face[2];
     const A = DV[a], B = DV[b], D = DV[d];
     const ux = B.x - A.x, uy = B.y - A.y, uz = B.z - A.z;
     const wx = D.x - A.x, wy = D.y - A.y, wz = D.z - A.z;
@@ -309,15 +333,15 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
     // Only faces turned toward the camera (it's a closed shape).
     if (nx * (cam.x - A.x) + ny * (cam.y - A.y) + nz * (cam.z - A.z) <= 0) continue;
     const nl = Math.hypot(nx, ny, nz) || 1;
-    const lit = 0.35 + 0.65 * Math.max(0, (nx * LIGHT2[0] + ny * LIGHT2[1] + nz * LIGHT2[2]) / nl);
-    ctx.fillStyle = `rgb(${(base[0] * lit) | 0},${(base[1] * lit) | 0},${(base[2] * lit) | 0})`;
+    const lit = Math.max(0, (nx * LIGHT2[0] + ny * LIGHT2[1] + nz * LIGHT2[2]) / nl);
+    ctx.fillStyle = shades[Math.round(lit * (DRONE_STEPS - 1))];
     ctx.beginPath();
     ctx.moveTo(DS[a].x, DS[a].y); ctx.lineTo(DS[b].x, DS[b].y); ctx.lineTo(DS[d].x, DS[d].y);
     ctx.closePath();
     ctx.fill();
   }
   const k = r.f / (t.z - cam.z);
-  const centre = proj(r, cam, t.x, t.y, t.z, {});
+  const centre = proj(r, cam, t.x, t.y, t.z, DC);
   // A pulsing outline so drones stand out even far away (never smaller than ~9px).
   const ringR = Math.max(9, h * 1.5 * k) * (1 + 0.12 * Math.sin(time * 6 + t.phase));
   ctx.lineWidth = 2;
@@ -334,14 +358,14 @@ function drawDrone(r, t, cam, time, fogStart, fogRange) {
   // Glowing core.
   ctx.globalCompositeOperation = 'lighter';
   const glowR = h * 1.4 * k;
-  const g = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, glowR);
-  g.addColorStop(0, `rgba(255,255,255,${(0.7 * (1 - fog)).toFixed(2)})`);
-  g.addColorStop(0.4, t.big ? 'rgba(255,170,60,0.35)' : 'rgba(255,80,130,0.35)');
-  g.addColorStop(1, 'rgba(255,80,130,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(centre.x, centre.y, glowR, 0, Math.PI * 2);
-  ctx.fill();
+  if (!droneGlowSmall) {
+    droneGlowSmall = glowSprite('rgba(255,255,255,0.7)', 'rgba(255,80,130,0.35)', 0.4);
+    droneGlowBig = glowSprite('rgba(255,255,255,0.7)', 'rgba(255,170,60,0.35)', 0.4);
+  }
+  const before = ctx.globalAlpha;
+  ctx.globalAlpha = 1 - fog * 0.6;
+  drawGlow(ctx, t.big ? droneGlowBig : droneGlowSmall, centre.x, centre.y, glowR);
+  ctx.globalAlpha = before;
   ctx.globalCompositeOperation = 'source-over';
   if (t.big) {
     // Spinning armor ring and health pips.
@@ -416,6 +440,7 @@ function drawFx(r, f, cam, textPass) {
   ctx.globalCompositeOperation = 'source-over';
 }
 
+const RETICLE_TICKS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // Aiming reticle straight ahead; it turns gold and tightens when a drone is locked on.
 function drawReticle(r, f, cam) {
   const cfg = r.config;
@@ -434,7 +459,8 @@ function drawReticle(r, f, cam) {
   const R = locked ? 11 : 14;
   ctx.beginPath();
   ctx.arc(FP.x, FP.y, R, 0, Math.PI * 2);
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  for (let i = 0; i < 4; i++) {
+    const dx = RETICLE_TICKS[i][0], dy = RETICLE_TICKS[i][1];
     ctx.moveTo(FP.x + dx * (R + 3), FP.y + dy * (R + 3));
     ctx.lineTo(FP.x + dx * (R + 9), FP.y + dy * (R + 9));
   }
@@ -492,12 +518,11 @@ export function drawChopperFrame(r, s, c, look, view) {
   const { ctx, config: cfg, w, h } = r;
   const p = view.palette;
   updateShades(s, p);
-  const cam = {
-    x: c.x,
-    y: view.camY,
-    z: c.distance - cfg.chopperCameraBack,
-    hY: h * cfg.flightHorizonRatio,
-  };
+  const cam = CAM;
+  cam.x = c.x;
+  cam.y = view.camY;
+  cam.z = c.distance - cfg.chopperCameraBack;
+  cam.hY = h * cfg.flightHorizonRatio;
 
   ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
   ctx.translate(view.shakeX || 0, view.shakeY || 0);
@@ -631,6 +656,26 @@ function jetMaterials(s, ship) {
 }
 
 const Q = {};
+const E0 = {}, E1 = {}, EA = {}, EB = {};
+const byDist = (a2, b2) => dist[b2] - dist[a2];
+// The jet's turn/tilt for this frame, worked out once and used by rotJet.
+const JR = { sx: 1, sz: 1, cr: 1, sr: 0, cp: 1, sp: 0, cy: 1, sy: 0 };
+function rotJet(x, y, z, o) {
+  x *= JR.sx; z *= JR.sz;
+  const x1 = x * JR.cr + y * JR.sr, y1 = -x * JR.sr + y * JR.cr;         // roll
+  const y2 = y1 * JR.cp + z * JR.sp, z2 = -y1 * JR.sp + z * JR.cp;       // pitch
+  o.x = x1 * JR.cy + z2 * JR.sy; o.y = y2; o.z = -x1 * JR.sy + z2 * JR.cy; // yaw
+  return o;
+}
+let burnerWarm = null, burnerCool = null, navRed = null, navGreen = null, navWhite = null;
+function jetSprites() {
+  if (burnerWarm) return;
+  burnerWarm = glowSprite('rgba(255,255,255,0.95)', 'rgba(255,170,70,0.7)', 0.35);
+  burnerCool = glowSprite('rgba(255,255,255,0.95)', 'rgba(140,200,255,0.7)', 0.35);
+  navRed = glowSprite('rgba(255,60,60,1)', 'rgba(255,60,60,0.6)', 0.4);
+  navGreen = glowSprite('rgba(60,255,110,1)', 'rgba(60,255,110,0.6)', 0.4);
+  navWhite = glowSprite('rgba(255,255,255,1)', 'rgba(255,255,255,0.6)', 0.4);
+}
 function drawJet(r, s, p, f, cam) {
   const { ctx, config: cfg } = r;
   const mats = jetMaterials(s, p.ship);
@@ -640,18 +685,14 @@ function drawJet(r, s, p, f, cam) {
   const roll = (f.bankLook ?? (f.vx / cfg.flightMaxSteerSpeed) * cfg.flightRollDeg) * DEG;
   const pitch = (f.pitchLook ?? (f.vy / cfg.flightMaxClimbSpeed) * cfg.flightPitchDeg) * DEG;
   const yaw = 0.15 * Math.atan2(f.vx, Math.max(1, f.speed));
-  const cr = Math.cos(roll), sr = Math.sin(roll);
-  const cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const sx = cfg.flightShipSpan / 1.2;
-  const sz = cfg.flightShipLength / 1.68;
-  const rot = (x, y, z, o) => {
-    x *= sx; z *= sz;
-    const x1 = x * cr + y * sr, y1 = -x * sr + y * cr;           // roll
-    const y2 = y1 * cp + z * sp, z2 = -y1 * sp + z * cp;          // pitch
-    o.x = x1 * cy + z2 * sy; o.y = y2; o.z = -x1 * sy + z2 * cy;  // yaw
-    return o;
-  };
+  JR.cr = Math.cos(roll); JR.sr = Math.sin(roll);
+  JR.cp = Math.cos(pitch); JR.sp = Math.sin(pitch);
+  JR.cy = Math.cos(yaw); JR.sy = Math.sin(yaw);
+  JR.sx = cfg.flightShipSpan / 1.2;
+  JR.sz = cfg.flightShipLength / 1.68;
+  const sz = JR.sz;
+  const rot = rotJet;
+  jetSprites();
   for (let i = 0; i < V.length; i++) {
     const t = rot(V[i][0], V[i][1], V[i][2], T[i]);
     proj(r, cam, f.x + t.x, f.y + t.y, f.distance + t.z, Q);
@@ -665,12 +706,12 @@ function drawJet(r, s, p, f, cam) {
   for (let i = 0; i < POLYS.length; i++) {
     const idx = POLYS[i].idx;
     let mx = 0, my = 0, mz = 0;
-    for (const n of idx) { mx += T[n].x; my += T[n].y; mz += T[n].z; }
+    for (let q = 0; q < idx.length; q++) { const n = idx[q]; mx += T[n].x; my += T[n].y; mz += T[n].z; }
     mx /= idx.length; my /= idx.length; mz /= idx.length;
     dist[i] = (mx - ex) ** 2 + (my - ey) ** 2 + (mz - ez) ** 2;
     order[i] = i;
   }
-  order.sort((a2, b2) => dist[b2] - dist[a2]);
+  order.sort(byDist);
   ctx.lineJoin = 'round';
   for (let n = 0; n < order.length; n++) {
     const pl = POLYS[order[n]];
@@ -701,49 +742,37 @@ function drawJet(r, s, p, f, cam) {
   // Afterburner flame, glowing out of the nozzle toward the camera.
   const boost = f.boost || 0;
   const flame = 0.18 + 0.4 * boost + (f.speed || 0) * 0.003;
-  const e0 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2], {});
-  const e1 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2] - flame / sz, {});
-  const a = proj(r, cam, f.x + e0.x, f.y + e0.y, f.distance + e0.z, {});
-  const b = proj(r, cam, f.x + e1.x, f.y + e1.y, f.distance + e1.z, {});
+  const e0 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2], E0);
+  const e1 = rot(EXHAUST[0], EXHAUST[1], EXHAUST[2] - flame / sz, E1);
+  const a = proj(r, cam, f.x + e0.x, f.y + e0.y, f.distance + e0.z, EA);
+  const b = proj(r, cam, f.x + e1.x, f.y + e1.y, f.distance + e1.z, EB);
   const k0 = r.f / (f.distance + e0.z - cam.z);
   const flick = 0.85 + 0.15 * Math.sin(performance.now() / 37);
   ctx.globalCompositeOperation = 'lighter';
   const rad = 0.11 * k0 * flick * (1 + 0.5 * boost);
-  let g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, rad * 1.6);
-  g.addColorStop(0, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.35, boost > 0.3 ? 'rgba(140,200,255,0.7)' : 'rgba(255,170,70,0.7)');
-  g.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(a.x, a.y, rad * 1.6, 0, Math.PI * 2);
-  ctx.fill();
-  g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-  g.addColorStop(0, 'rgba(255,240,200,0.9)');
-  g.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = g;
+  drawGlow(ctx, boost > 0.3 ? burnerCool : burnerWarm, a.x, a.y, rad * 1.6);
+  // The flame: two overlapping tapers (long and faint, short and bright).
+  ctx.fillStyle = '#ffd9a0';
+  ctx.globalAlpha = 0.4;
   ctx.beginPath();
   ctx.moveTo(a.x - rad * 0.8, a.y);
   ctx.lineTo(a.x + rad * 0.8, a.y);
   ctx.lineTo(b.x, b.y);
   ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(a.x - rad * 0.8, a.y);
+  ctx.lineTo(a.x + rad * 0.8, a.y);
+  ctx.lineTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 
   // Navigation lights: red on the left wingtip, green on the right, and a
   // white strobe that blinks now and then.
-  const now = performance.now();
-  const strobe = now % 1400 < 70;
-  ctx.globalCompositeOperation = 'lighter';
-  for (const [i, col] of [[TIP_L, '255,60,60'], [TIP_R, '60,255,110']]) {
-    const t = T[i];
-    const rr = strobe ? 9 : 5;
-    const gl = ctx.createRadialGradient(t.sx, t.sy, 0, t.sx, t.sy, rr);
-    gl.addColorStop(0, strobe ? 'rgba(255,255,255,1)' : `rgba(${col},1)`);
-    gl.addColorStop(1, `rgba(${col},0)`);
-    ctx.fillStyle = gl;
-    ctx.beginPath();
-    ctx.arc(t.sx, t.sy, rr, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const strobe = performance.now() % 1400 < 70;
+  const rr = strobe ? 9 : 5;
+  drawGlow(ctx, strobe ? navWhite : navRed, T[TIP_L].sx, T[TIP_L].sy, rr);
+  drawGlow(ctx, strobe ? navWhite : navGreen, T[TIP_R].sx, T[TIP_R].sy, rr);
   ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -823,7 +852,9 @@ export function drawChopperControls(r, cc, hover, leverHeld, stick) {
 
   // The cyclic: the floating joystick, or a faint ring where it would go.
   if (stick) {
-    drawJoystick(r, { x0: stick.x0, y0: stick.y0, x: stick.x, y: stick.y });
+    // The thumb record has x0, y0, x and y, which is all the ring needs. Its
+    // centre (x0, y0) follows the thumb, so the ring follows too.
+    drawJoystick(r, stick);
   } else {
     const R = r.config.joystickRadiusPx;
     const gx = cc.side === 'right' ? Math.max(R + 20, r.w * 0.3) : Math.min(r.w - R - 20, r.w * 0.7);

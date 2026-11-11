@@ -137,7 +137,8 @@ test('the ship contrasts with the ground on every level', () => {
 
 test('tuning numbers are sensible', () => {
   // The 3D Flight Steering feel presets are checked in flight-feel.test.js.
-  const NOT_NUMBERS = new Set(['flightFeelPresets', 'flightFeelDefault']);
+  // The auto-quality steps are a list, checked in quality.test.js.
+  const NOT_NUMBERS = new Set(['flightFeelPresets', 'flightFeelDefault', 'qualitySteps']);
   for (const [key, value] of Object.entries(CONFIG)) {
     if (NOT_NUMBERS.has(key)) continue;
     assert.equal(typeof value, 'number', `${key} should be a number`);

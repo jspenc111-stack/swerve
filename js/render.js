@@ -7,6 +7,7 @@
 // so far-away things are smaller and closer to the horizon.
 
 import { mixColor } from './levels.js';
+import { glowSprite, drawGlow } from './sprites.js';
 
 const FOG_STEPS = 24;
 const SMALL_CUBE_PX = 4; // cubes narrower than this on screen are drawn as one rectangle
@@ -25,15 +26,17 @@ export function createRenderer(canvas, config) {
     groundGrad: null,
     shipKey: '',
     shipShades: [],
+    scaleCap: Infinity, // auto quality's sharpness cap (see quality.js)
   };
   resizeRenderer(r);
   return r;
 }
 
-// Call on window resize only (never every frame).
+// Call on window resize, or when auto quality changes the sharpness step
+// (never every frame).
 export function resizeRenderer(r) {
   const cfg = r.config;
-  r.dpr = Math.min(window.devicePixelRatio || 1, cfg.maxDevicePixelRatio);
+  r.dpr = Math.min(window.devicePixelRatio || 1, cfg.maxDevicePixelRatio, r.scaleCap || Infinity);
   r.w = window.innerWidth;
   r.h = window.innerHeight;
   r.canvas.width = Math.round(r.w * r.dpr);
@@ -282,6 +285,7 @@ const FACETS = [
 ];
 const CANOPY = ['c0', 'c1', 'c2', 'c3', 'c4'];
 const ENGINES = ['rearR', 'rearL'];
+const TIPS = ['tipL', 'tipR'];
 const T = {};
 for (const k of Object.keys(MODEL)) T[k] = { x: 0, y: 0, z: 0, sx: 0, sy: 0 };
 const LIGHT = (() => { const l = Math.hypot(-0.45, 1, -0.25); return [-0.45 / l, 1 / l, -0.25 / l]; })();
@@ -289,6 +293,7 @@ const SHADE_STEPS = 24;
 const facetOrder = [0, 1, 2, 3];
 const facetDist = [0, 0, 0, 0];
 const HOVER = 0.28;
+const byFacetDist = (a, b) => facetDist[b] - facetDist[a];
 
 function updateShipColors(r, ship) {
   if (r.shipKey === ship) return;
@@ -303,6 +308,7 @@ function updateShipColors(r, ship) {
   r.shipEdge = mixColor(ship, '#ffffff', 0.62);
   r.shipGlass = mixColor(ship, '#0a0f1e', 0.8);
   r.shipGlow = mixColor(ship, '#ffffff', 0.72);
+  r.shipGlowSprite = glowSprite('#ffffff', r.shipGlow, 0.35);
 }
 
 function drawShip(r, p, view, game) {
@@ -350,15 +356,20 @@ function drawShip(r, p, view, game) {
     const z0 = zc + t.z;
     project(r, t.x - syw * trail, HOVER + t.y, z0 - cyw * trail, Q);
     const w = (0.05 * r.f) / z0;
-    const g = ctx.createLinearGradient(t.sx, t.sy, Q.x, Q.y);
-    g.addColorStop(0, r.shipGlow);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.globalAlpha = 0.45 + 0.35 * boost;
+    // Two overlapping tapers (a long faint one and a short bright one) fade
+    // the trail out without building a gradient every frame.
+    ctx.fillStyle = r.shipGlow;
+    ctx.globalAlpha = 0.22 + 0.18 * boost;
     ctx.beginPath();
     ctx.moveTo(t.sx - w, t.sy);
     ctx.lineTo(t.sx + w, t.sy);
     ctx.lineTo(Q.x, Q.y);
+    ctx.fill();
+    ctx.globalAlpha = 0.3 + 0.2 * boost;
+    ctx.beginPath();
+    ctx.moveTo(t.sx - w, t.sy);
+    ctx.lineTo(t.sx + w, t.sy);
+    ctx.lineTo((t.sx + Q.x) / 2, (t.sy + Q.y) / 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -373,7 +384,7 @@ function drawShip(r, p, view, game) {
     facetDist[i] = cx * cx + (camH - HOVER - cy) ** 2 + (zc + cz) ** 2;
     facetOrder[i] = i;
   }
-  facetOrder.sort((a, b) => facetDist[b] - facetDist[a]);
+  facetOrder.sort(byFacetDist);
   for (let n = 0; n < 4; n++) {
     const f = FACETS[facetOrder[n]];
     const a = T[f[0]], b = T[f[1]], c = T[f[2]];
@@ -433,18 +444,11 @@ function drawShip(r, p, view, game) {
   for (const k of ENGINES) {
     const t = T[k];
     const rad = ((0.09 * r.f) / (zc + t.z)) * flicker * (1 + 0.3 * boost);
-    const g = ctx.createRadialGradient(t.sx, t.sy, 0, t.sx, t.sy, rad);
-    g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.35, r.shipGlow);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(t.sx, t.sy, rad, 0, Math.PI * 2);
-    ctx.fill();
+    drawGlow(ctx, r.shipGlowSprite, t.sx, t.sy, rad);
   }
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#ffffff';
-  for (const k of ['tipL', 'tipR']) {
+  for (const k of TIPS) {
     ctx.beginPath();
     ctx.arc(T[k].sx, T[k].sy, 2, 0, Math.PI * 2);
     ctx.fill();

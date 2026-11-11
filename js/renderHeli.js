@@ -102,13 +102,16 @@ export function clearHeliFx(hr) {
   hr.smokeDebt = 0;
 }
 
+const EXHAUST_PT = { x: 0, y: 0 };
 // Where the exhaust comes out (behind the engine, under the rotor).
 function exhaustPoint(heli, cfg) {
   const k = cfg.heliWidth / 2;
   const lx = -0.32 * k;
   const ly = 0.32 * k;
   const c = Math.cos(heli.pitch), s = Math.sin(heli.pitch);
-  return { x: heli.distance + lx * c - ly * s, y: heli.y + lx * s + ly * c };
+  EXHAUST_PT.x = heli.distance + lx * c - ly * s;
+  EXHAUST_PT.y = heli.y + lx * s + ly * c;
+  return EXHAUST_PT;
 }
 
 // A crash: bits in the ship color and orange, plus a puff of smoke.
@@ -241,7 +244,7 @@ function ridges(r, hr, color, speed, depth, seed, pad) {
   const shift = hr.distance * speed * s;
   const step = Math.max(6, s * 0.8);
   ctx.fillStyle = color;
-  for (const dir of [1, -1]) {
+  for (let dir = 1; dir >= -1; dir -= 2) {
     ctx.beginPath();
     const edge = dir > 0 ? top - pad - 400 : bottom + pad + 400;
     ctx.moveTo(-pad, edge);
@@ -263,7 +266,8 @@ function drawWalls(r, hr, p, cols, pad, glow) {
   if (!cols.length) return;
   const sh = hr.shades;
   const lw = Math.max(1.5, hr.scale * 0.09);
-  for (const ceiling of [true, false]) {
+  for (let side = 0; side < 2; side++) {
+    const ceiling = side === 0;
     const pts = edgePoints(hr, cols, ceiling);
     const edge = ceiling ? -pad - 400 : r.h + pad + 400;
     ctx.beginPath();
@@ -345,9 +349,10 @@ function drawObstacles(r, hr, obstacles, glow) {
       ctx.closePath();
       ctx.fillStyle = sh.dark;
       ctx.fill();
-      if (glow > 0) glowOutline(ctx, glow, sh.lit, () => {
+      if (glow > 0) {
         ctx.beginPath(); ctx.moveTo(x0, baseY); ctx.lineTo(tipX, tipY); ctx.lineTo(x1, baseY);
-      });
+        glowOutline(ctx, glow, sh.lit);
+      }
       continue;
     }
     obstacleRects(o, hr.rects);
@@ -355,7 +360,10 @@ function drawObstacles(r, hr, obstacles, glow) {
       const ax = sx(hr, rx0), bx = sx(hr, rx1);
       const ay = sy(hr, ry1), by = sy(hr, ry0); // screen top, bottom
       litBox(ctx, sh, hr.cubeColor, ax, ay, bx - ax, by - ay, bevel);
-      if (glow > 0) glowOutline(ctx, glow, sh.lit, () => { ctx.beginPath(); ctx.rect(ax, ay, bx - ax, by - ay); });
+      if (glow > 0) {
+        ctx.beginPath(); ctx.rect(ax, ay, bx - ax, by - ay);
+        glowOutline(ctx, glow, sh.lit);
+      }
     }
   }
 }
@@ -372,9 +380,9 @@ function litBox(ctx, sh, color, x, y, w, h, bevel) {
   ctx.fillRect(x + w - b, y + b, b, h - b); // right edge
 }
 
-function glowOutline(ctx, glow, color, path) {
+// Strokes the current path as a neon outline (build the path first).
+function glowOutline(ctx, glow, color) {
   ctx.save();
-  path();
   ctx.globalAlpha = glow * 0.45;
   ctx.strokeStyle = color;
   ctx.lineWidth = 6;
@@ -444,7 +452,9 @@ function drawParts(r, hr) {
   }
   ctx.globalAlpha = 1;
   if (hr.pops.length) {
-    ctx.font = `800 ${Math.round(Math.max(16, hr.scale * 0.9))}px system-ui, sans-serif`;
+    const px = Math.round(Math.max(16, hr.scale * 0.9));
+    if (px !== hr.popPx) { hr.popPx = px; hr.popFont = `800 ${px}px system-ui, sans-serif`; }
+    ctx.font = hr.popFont;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const p of hr.pops) {

@@ -31,6 +31,7 @@ import {
   loadSave, writeSave, recordRun, rankOf, sortedHistory, clearHistory,
   bestScoreOf, runsIn, resetBests, collectiveSideOf, seenChopperTipsOf, flightFeelOf,
 } from './storage.js';
+import { createQuality, updateQuality, qualityScale, resetQualityRun, pauseQuality } from './quality.js';
 import {
   unlockAudio, setSoundEnabled, playLevelUp, playCrash, playNewBest, playRing, vibrate,
   playShot, playHit, playBoom, playGem, setRotorHum, playLand, setChopperRotor,
@@ -56,6 +57,30 @@ const chopperPilot = { lever: 0, stickX: 0, stickY: 0 }; // menu preview autopil
 const chopperKeyState = {};
 const save = loadSave(undefined, CONFIG.historyMax);
 bindBoostButton(input, $('btn-boost'));
+
+// Auto quality: lowers the drawing sharpness (then the effects) if the frame
+// rate drops while playing, and raises it again when things are smooth.
+// Steps the phone can't show anyway (its screen is less sharp) are skipped.
+const quality = createQuality({
+  steps: sharpnessSteps(),
+  slowFactor: CONFIG.qualitySlowFactor,
+  downSec: CONFIG.qualityDownSec,
+  upSec: CONFIG.qualityUpSec,
+  upGapSec: CONFIG.qualityUpGapSec,
+});
+function sharpnessSteps() {
+  const device = Math.min(window.devicePixelRatio || 1, CONFIG.maxDevicePixelRatio);
+  const steps = [];
+  for (const s of CONFIG.qualitySteps) {
+    const v = Math.min(s, device);
+    if (!steps.includes(v)) steps.push(v);
+  }
+  return steps;
+}
+function applyQualityStep() {
+  renderer.scaleCap = qualityScale(quality);
+  resizeRenderer(renderer); // the canvas is resized only here, when the step changes
+}
 
 // Which game mode is selected: 'classic', 'flight' (3D), 'heli' (Helicopter)
 // or 'chopper' (3D Heli).
@@ -348,6 +373,7 @@ function startRun() {
   resetCurrent();
   clearInput(input);
   calibrateTilt(input);
+  resetQualityRun(quality);
   lastScoreShown = -1;
   lastLabel = '';
   view.bank = 0;
@@ -414,6 +440,7 @@ function resume() {
   if (mode !== 'paused') return;
   unlockAudio();
   clearInput(input);
+  pauseQuality(quality);
   mode = 'playing';
   lastTime = 0;
   showScreen(null);
@@ -783,6 +810,9 @@ function frame(now) {
 
   view.joystick.active = false;
   if (mode === 'playing') {
+    // Auto quality watches the real frame time (only while playing, so it
+    // never changes anything mid-crash or in the menus).
+    if (dt > 0 && updateQuality(quality, dt * 1000, true)) applyQualityStep();
     let events;
     if (gameMode === 'flight') {
       // The Steering feel is looked up every frame, so a change (even from
@@ -899,8 +929,9 @@ function frame(now) {
     view.firing = save.settings.autoFire && mode === 'playing';
     drawFlightFrame(renderer, flightRenderer, flight, view);
   } else {
-    view.lean = (game.vx / CONFIG.maxSteerSpeed) * CONFIG.shipLeanDeg * DEG;
-    view.yaw = CONFIG.shipYawFactor * Math.atan2(game.vx, Math.max(1, game.speed));
+    // The eased lean from game.js, so quick turn-arounds don't rock the ship.
+    view.lean = game.leanLook * CONFIG.shipLeanDeg * DEG;
+    view.yaw = CONFIG.shipYawFactor * Math.atan2(game.leanLook * CONFIG.maxSteerSpeed, Math.max(1, game.speed));
     drawFrame(renderer, game, view);
   }
   if (DEBUG) updateFps(now);
@@ -1004,7 +1035,9 @@ function updateFps(now) {
     const count = gameMode === 'flight' ? flight.spawner.boxes.length
       : gameMode === 'chopper' ? chopper.spawner.boxes.length
         : gameMode === 'heli' ? heli.spawner.obstacles.length : game.spawner.cubes.length;
-    fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))} · obstacles ${count}`;
+    fpsEl.textContent = `FPS ${Math.round((fpsFrames * 1000) / (now - fpsSince))}` +
+      ` · res ${renderer.dpr}× (step ${quality.step + 1}/${quality.steps.length})` +
+      ` · fx ${quality.lite ? 'lite (auto)' : 'full'} · obstacles ${count}`;
     fpsFrames = 0;
     fpsSince = now;
   }

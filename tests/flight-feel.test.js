@@ -307,7 +307,8 @@ test('Classic drag is unaffected by the Steering feel (no curve, its own 80 px r
   close(getSteer(input, 1000), 0.25, 'straight line');
   input.pointers[0].x = 200 + CONFIG.dragRangePx * 2;
   assert.equal(getSteer(input, 1000), 1);
-  assert.equal(input.pointers[0].startX, 200, 'its centre does not move');
+  // v1.6: Classic drag's centre follows the thumb at its own 80 px range.
+  assert.equal(input.pointers[0].startX, 200 + CONFIG.dragRangePx, 'its centre follows at dragRangePx, not the Steering feel ring');
 });
 
 test('3D Heli cyclic is unaffected (no curve, its own 70 px ring)', () => {
